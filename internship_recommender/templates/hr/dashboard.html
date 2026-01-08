@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}HR Dashboard - TalentMatch{% endblock %}
+
+{% block content %}
+<div class="with-sidebar">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>HR Portal</h2>
+    <nav>
+      <ul>
+        <li><a href="/hr/dashboard" class="active"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+        <li><a href="/hr/candidates"><i class="fas fa-users"></i> Candidates</a></li>
+        <li><a href="/hr/jobs"><i class="fas fa-briefcase"></i> Job Postings</a></li>
+        <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <div class="top-nav">
+      <h1>HR Dashboard</h1>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div class="user-avatar">
+          {{ (user.full_name or user.username)[0]|upper if user else 'H' }}
+        </div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <h1>Welcome, {{ user.full_name or user.username }}!</h1>
+      <p style="color: #666; margin-bottom: 2rem;">Use AI-powered tools to find the best candidates for your roles.</p>
+
+      <div class="grid">
+        <!-- Quick Stats -->
+        <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+          <h3><i class="fas fa-users"></i> Total Candidates</h3>
+          <h2 style="margin: 0.5rem 0; font-size: 2.5rem;">{{ total_candidates }}</h2>
+          <a href="/hr/candidates" style="color: white; text-decoration: underline;">View All →</a>
+        </div>
+
+        <div class="card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+          <h3><i class="fas fa-briefcase"></i> Active Jobs</h3>
+          <h2 style="margin: 0.5rem 0; font-size: 2.5rem;">{{ job_postings|length }}</h2>
+          <a href="/hr/jobs" style="color: white; text-decoration: underline;">Manage Jobs →</a>
+        </div>
+      </div>
+
+      <!-- AI-Powered Candidate Analysis Section -->
+      {% if job_postings %}
+      <div class="card" style="margin-top: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <h3 style="color: white; margin-top: 0;"><i class="fas fa-brain"></i> AI-Powered Candidate Analysis</h3>
+        <p style="color: rgba(255,255,255,0.9); margin-bottom: 1rem;">Analyze candidates against your job descriptions using advanced AI techniques</p>
+        
+        <form method="GET" action="/hr/dashboard" style="display: flex; gap: 1rem; align-items: end;">
+          <div style="flex: 1;">
+            <label style="display: block; margin-bottom: 0.5rem; color: white;">Select Job Posting:</label>
+            <select name="job_id" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem;" onchange="this.form.submit()">
+              <option value="">-- Select a job to analyze --</option>
+              {% for job in job_postings %}
+              <option value="{{ job.id }}" {% if selected_job_id == job.id %}selected{% endif %}>
+                {{ job.title }}{% if job.location %} - {{ job.location }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      <!-- Analysis Statistics -->
+      {% if analysis_stats and selected_job %}
+      <div class="card" style="margin-top: 2rem; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+        <h3 style="color: white; margin-top: 0;"><i class="fas fa-chart-bar"></i> Analysis Summary for {{ selected_job.title }}</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+          <div style="text-align: center; background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ analysis_stats.total_candidates }}</div>
+            <div style="font-size: 0.9rem; opacity: 0.9;">Total Analyzed</div>
+          </div>
+          <div style="text-align: center; background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ analysis_stats.excellent_matches }}</div>
+            <div style="font-size: 0.9rem; opacity: 0.9;">Excellent (85%+)</div>
+          </div>
+          <div style="text-align: center; background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ analysis_stats.good_matches }}</div>
+            <div style="font-size: 0.9rem; opacity: 0.9;">Good (70-84%)</div>
+          </div>
+          <div style="text-align: center; background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: bold;">{{ analysis_stats.average_score }}%</div>
+            <div style="font-size: 0.9rem; opacity: 0.9;">Avg Match Score</div>
+          </div>
+        </div>
+        {% if selected_job.required_skills %}
+        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.3);">
+          <strong style="display: block; margin-bottom: 0.5rem;">Required Skills:</strong>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            {% for skill in selected_job.required_skills.split(',') %}
+              <span style="background: rgba(255,255,255,0.3); color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">{{ skill.strip() }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Analyzed Results -->
+      {% if analyzed_results %}
+      <div class="card" style="margin-top: 2rem;">
+        <h3><i class="fas fa-chart-line"></i> Candidate Analysis Results ({{ analyzed_results|length }} candidates analyzed)</h3>
+        <p style="color: #666; margin-bottom: 1.5rem;">
+          All candidates ranked by AI-powered match score using semantic matching, skill graph analysis, and role alignment. 
+          Candidates are sorted from best match to least match.
+        </p>
+        
+        <div style="display: grid; gap: 1.5rem; margin-top: 1.5rem;">
+          {% for result in analyzed_results %}
+          <div style="border: 2px solid {% if result.overall_score >= 85 %}#28a745{% elif result.overall_score >= 70 %}#ffc107{% else %}#dc3545{% endif %}; border-radius: var(--border-radius); padding: 1.5rem; background: var(--accent);">
+            <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem;">
+              <div style="flex: 1; min-width: 300px;">
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                  <div style="background: {% if result.overall_score >= 85 %}#28a745{% elif result.overall_score >= 70 %}#ffc107{% else %}#dc3545{% endif %}; color: white; width: 70px; height: 70px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; font-weight: bold; flex-shrink: 0;">
+                    {{ result.overall_score|int }}%
+                  </div>
+                  <div>
+                    <h4 style="margin: 0; color: var(--primary); font-size: 1.4rem;">
+                      {{ result.candidate_name }}
+                    </h4>
+                    <p style="margin: 0.25rem 0; color: #666;">
+                      <i class="fas fa-envelope"></i> {{ result.candidate_email }}
+                    </p>
+                    <p style="margin: 0.5rem 0 0 0;">
+                      <span style="background: {% if result.overall_score >= 85 %}#28a745{% elif result.overall_score >= 70 %}#ffc107{% else %}#dc3545{% endif %}; color: white; padding: 0.35rem 0.75rem; border-radius: 15px; font-size: 0.9rem; font-weight: 500;">
+                        {{ result.recommendation }}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin: 1rem 0; padding: 1rem; background: white; border-radius: 8px;">
+                  <div>
+                    <strong style="color: #667eea;">Skill Match:</strong> {{ result.skill_match_score }}%
+                    <div style="background: #e0e0e0; height: 8px; border-radius: 4px; margin-top: 0.25rem;">
+                      <div style="background: #667eea; height: 100%; width: {{ result.skill_match_score }}%; border-radius: 4px;"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <strong style="color: #28a745;">Semantic Match:</strong> {{ result.semantic_match_score }}%
+                    <div style="background: #e0e0e0; height: 8px; border-radius: 4px; margin-top: 0.25rem;">
+                      <div style="background: #28a745; height: 100%; width: {{ result.semantic_match_score }}%; border-radius: 4px;"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <strong style="color: #ff7b00;">Matched Skills:</strong> {{ result.matched_count }}/{{ result.total_required }}
+                  </div>
+                  <div>
+                    <strong style="color: #dc3545;">Missing Skills:</strong> {{ result.missing_count }}
+                  </div>
+                </div>
+
+                {% if result.matched_skills %}
+                <div style="margin-top: 1rem;">
+                  <strong>✅ Matched Skills:</strong>
+                  <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                    {% for skill in result.matched_skills[:8] %}
+                      <span style="background: #28a745; color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">{{ skill }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {% if result.missing_skills %}
+                <div style="margin-top: 1rem;">
+                  <strong>⚠️ Missing Skills:</strong>
+                  <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                    {% for skill in result.missing_skills[:8] %}
+                      <span style="background: #dc3545; color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">{{ skill }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {% if result.recommendation_reason %}
+                <p style="margin-top: 1rem; padding: 0.75rem; background: rgba(102, 126, 234, 0.1); border-left: 3px solid #667eea; border-radius: 4px; color: #666;">
+                  <i class="fas fa-info-circle"></i> <strong>Analysis:</strong> {{ result.recommendation_reason }}
+                </p>
+                {% endif %}
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                {% if selected_job_id or job_postings %}
+                <a href="/hr/job/{{ selected_job_id or job_postings[0].id }}/candidate/{{ result.candidate_id }}" class="btn">
+                  <i class="fas fa-chart-line"></i> Detailed Insights
+                </a>
+                {% endif %}
+                <a href="/hr/candidate/{{ result.candidate_id }}" class="btn btn-secondary">
+                  <i class="fas fa-user"></i> Full Profile
+                </a>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        
+        {% if analyzed_results|length == 0 %}
+        <p style="text-align: center; padding: 2rem; color: #999;">
+          No candidates found matching this job posting.
+        </p>
+        {% endif %}
+      </div>
+      {% elif job_postings %}
+      <div class="card" style="margin-top: 2rem; text-align: center; padding: 3rem; background: #f8f9fa;">
+        <i class="fas fa-search" style="font-size: 3rem; color: #ccc; margin-bottom: 1rem;"></i>
+        <p style="color: #666;">Select a job posting above to analyze candidates using AI-powered matching</p>
+      </div>
+      {% endif %}
+
+      <!-- Recent Candidates -->
+      <div class="card" style="margin-top: 2rem;">
+        <h3><i class="fas fa-user-plus"></i> Recent Candidates</h3>
+        {% if candidates %}
+          <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+            {% for candidate in candidates[:5] %}
+            <div style="border: 1px solid #ddd; border-radius: var(--border-radius); padding: 1rem; background: var(--accent);">
+              <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                  <h4 style="margin: 0 0 0.5rem 0;">{{ candidate.full_name or candidate.username }}</h4>
+                  <p style="margin: 0.25rem 0; color: #666;">
+                    <i class="fas fa-envelope"></i> {{ candidate.email }}
+                  </p>
+                  {% if candidate.degree %}
+                  <p style="margin: 0.25rem 0; color: #666;">
+                    <i class="fas fa-graduation-cap"></i> {{ candidate.degree }}
+                    {% if candidate.stream %} - {{ candidate.stream }}{% endif %}
+                  </p>
+                  {% endif %}
+                  {% if candidate.skills %}
+                  <p style="margin: 0.5rem 0 0 0;">
+                    <strong>Skills:</strong> 
+                    {% for skill in candidate.skills.split(',')[:5] %}
+                      <span style="background: var(--primary); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; display: inline-block; margin: 0.25rem 0.25rem 0.25rem 0;">{{ skill.strip() }}</span>
+                    {% endfor %}
+                  </p>
+                  {% endif %}
+                </div>
+                <a href="/hr/candidate/{{ candidate.id }}" class="btn">View Profile</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p>No candidates found. Candidates will appear here once they register and upload their profiles.</p>
+        {% endif %}
+        <a href="/hr/candidates" class="btn" style="margin-top: 1rem;">View All Candidates</a>
+      </div>
+
+      <!-- Active Job Postings -->
+      <div class="card" style="margin-top: 2rem;">
+        <h3><i class="fas fa-briefcase"></i> Active Job Postings</h3>
+        {% if job_postings %}
+          <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+            {% for job in job_postings[:5] %}
+            <div style="border: 1px solid #ddd; border-radius: var(--border-radius); padding: 1rem; background: var(--accent);">
+              <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                  <h4 style="margin: 0 0 0.5rem 0;">{{ job.title }}</h4>
+                  {% if job.location %}
+                  <p style="margin: 0.25rem 0; color: #666;">
+                    <i class="fas fa-map-marker-alt"></i> {{ job.location }}
+                  </p>
+                  {% endif %}
+                  {% if job.required_skills %}
+                  <p style="margin: 0.5rem 0 0 0;">
+                    <strong>Required Skills:</strong> 
+                    {% for skill in job.required_skills.split(',')[:5] %}
+                      <span style="background: #667eea; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; display: inline-block; margin: 0.25rem 0.25rem 0.25rem 0;">{{ skill.strip() }}</span>
+                    {% endfor %}
+                  </p>
+                  {% endif %}
+                </div>
+                <a href="/hr/job/{{ job.id }}/match" class="btn">Match Candidates</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p>No job postings yet. Create your first job posting to start matching candidates!</p>
+        {% endif %}
+        <a href="/hr/jobs" class="btn" style="margin-top: 1rem;">Manage Job Postings</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px var(--shadow);
+    transition: var(--transition);
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px var(--shadow);
+  }
+</style>
+{% endblock %}
+

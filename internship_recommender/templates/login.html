@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Login - InternMatch{% endblock %}
+{% block title %}Login - TalentMatch{% endblock %}
 
 {% block content %}
 <!-- Login Section -->
@@ -8,8 +8,8 @@
   <div class="auth-container">
     <div class="auth-card" data-aos="fade-up">
       <div class="auth-header">
-        <h1><i class="fas fa-sign-in-alt"></i> Welcome Back</h1>
-        <p>Sign in to your InternMatch account</p>
+        <h1><i class="fas fa-sign-in-alt"></i> Login</h1>
+        <p>Sign in to your account</p>
       </div>
 
       {% with messages = get_flashed_messages() %}
@@ -22,15 +22,15 @@
 
       <form action="/login" method="post" class="auth-form">
         <div class="form-group">
-          <label for="username"><i class="fas fa-user"></i> Username or Email</label>
-          <input type="text" id="username" name="username" placeholder="Enter username or email" required>
+          <label for="username">Username or Email</label>
+          <input type="text" id="username" name="username" placeholder="Username or email" required>
         </div>
         <div class="form-group">
-          <label for="password"><i class="fas fa-lock"></i> Password</label>
-          <input type="password" id="password" name="password" placeholder="Enter your password" required>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Password" required>
         </div>
         <button type="submit" class="btn btn-primary btn-large">
-          <i class="fas fa-sign-in-alt"></i> Login
+          Login
         </button>
       </form>
 

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Profile - InternMatch{% endblock %}
+{% block title %}Edit Profile - TalentMatch{% endblock %}
 
 {% block content %}
 <div class="with-sidebar">
   <div class="top-nav">
-    <h1>InternMatch</h1>
+    <h1>TalentMatch</h1>
     <div class="user-avatar">
       {{ (user.full_name or user.username)[0]|upper if user else 'U' }}
     </div>
@@ -19,7 +19,7 @@
         <li><a href="/profile" class="active"><i class="fas fa-user"></i> Profile</a></li>
         <li><a href="/upload"><i class="fas fa-upload"></i> Upload Resume</a></li>
         <li><a href="/apply"><i class="fas fa-file-alt"></i> Application Form</a></li>
-        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Recommended Internships</a></li>
+        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Job Recommendations</a></li>
         <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
       </ul>
     </nav>

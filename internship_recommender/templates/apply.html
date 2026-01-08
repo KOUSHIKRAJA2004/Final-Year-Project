@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Application Form - InternMatch{% endblock %}
+{% block title %}Application Form - TalentMatch{% endblock %}
 
 {% block content %}
 <div class="with-sidebar">
   <div class="top-nav">
-    <h1>InternMatch</h1>
+    <h1>TalentMatch</h1>
     <div class="user-avatar">
       {{ (user.full_name or user.username)[0]|upper if user else 'U' }}
     </div>
@@ -19,7 +19,7 @@
         <li><a href="/profile"><i class="fas fa-user"></i> Profile</a></li>
         <li><a href="/upload"><i class="fas fa-upload"></i> Upload Resume</a></li>
         <li><a href="/apply" class="active"><i class="fas fa-file-alt"></i> Application Form</a></li>
-        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Recommended Internships</a></li>
+        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Job Recommendations</a></li>
         <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
       </ul>
     </nav>
@@ -27,10 +27,10 @@
 
   <div class="main-content">
     <div class="content">
-      <h1><i class="fas fa-clipboard-list"></i> Internship Application Form</h1>
+      <h1><i class="fas fa-clipboard-list"></i> Job Application Form</h1>
 
       <div class="card">
-        <p>Fill out this form to get personalized internship recommendations based on your profile and skills.</p>
+        <p>Fill out this form to get personalized job recommendations based on your profile and skills.</p>
 
         <form action="/apply" method="post">
           <div class="card" style="margin-bottom: 2rem;">

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Register - InternMatch{% endblock %}
+{% block title %}Register - TalentMatch{% endblock %}
 
 {% block content %}
 <!-- Register Section -->
@@ -8,8 +8,8 @@
   <div class="auth-container">
     <div class="auth-card" data-aos="fade-up">
       <div class="auth-header">
-        <h1><i class="fas fa-user-plus"></i> Join InternMatch</h1>
-        <p>Create your account and start your AI-powered internship journey</p>
+        <h1><i class="fas fa-user-plus"></i> Create Account</h1>
+        <p>Sign up to get started</p>
       </div>
 
       {% with messages = get_flashed_messages() %}
@@ -22,27 +22,23 @@
 
       <form action="/register" method="post" class="auth-form">
         <div class="form-group">
-          <label for="full_name"><i class="fas fa-user"></i> Full Name</label>
-          <input type="text" id="full_name" name="full_name" placeholder="Enter your full name" required>
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="Username" required>
         </div>
         <div class="form-group">
-          <label for="username"><i class="fas fa-user"></i> Username</label>
-          <input type="text" id="username" name="username" placeholder="Choose a username" required>
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="Email" required>
         </div>
         <div class="form-group">
-          <label for="email"><i class="fas fa-envelope"></i> Email</label>
-          <input type="email" id="email" name="email" placeholder="Enter your email" required>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Password (min 6 characters)" required>
         </div>
         <div class="form-group">
-          <label for="password"><i class="fas fa-lock"></i> Password</label>
-          <input type="password" id="password" name="password" placeholder="Create a password" required>
-        </div>
-        <div class="form-group">
-          <label for="confirm_password"><i class="fas fa-lock"></i> Confirm Password</label>
-          <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" required>
+          <label for="confirm_password">Confirm Password</label>
+          <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm password" required>
         </div>
         <button type="submit" class="btn btn-primary btn-large">
-          <i class="fas fa-user-plus"></i> Create Account
+          Create Account
         </button>
       </form>
 

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Resume - InternMatch{% endblock %}
+{% block title %}Upload Resume - TalentMatch{% endblock %}
 
 {% block content %}
 <div class="with-sidebar">
   <div class="top-nav">
-    <h1>InternMatch</h1>
+    <h1>TalentMatch</h1>
     <div class="user-avatar">
       {{ (user.full_name or user.username)[0]|upper if user else 'U' }}
     </div>
@@ -19,7 +19,7 @@
         <li><a href="/profile"><i class="fas fa-user"></i> Profile</a></li>
         <li><a href="/upload" class="active"><i class="fas fa-upload"></i> Upload Resume</a></li>
         <li><a href="/apply"><i class="fas fa-file-alt"></i> Application Form</a></li>
-        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Recommended Internships</a></li>
+        <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Job Recommendations</a></li>
         <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
       </ul>
     </nav>
@@ -30,7 +30,7 @@
       <h1><i class="fas fa-file-upload"></i> Upload Resume & Get Recommendations</h1>
 
       <div class="card">
-        <p>Upload your resume to get AI-powered skill extraction, personalized internship recommendations, and a custom learning path.</p>
+        <p>Upload your resume to get AI-powered skill extraction, personalized job recommendations, and a custom learning path.</p>
 
         <div class="upload-area" style="border: 2px dashed var(--primary); border-radius: var(--border-radius); padding: 2rem; text-align: center; margin: 2rem 0; background: var(--accent);">
           <i class="fas fa-cloud-upload-alt" style="font-size: 3rem; color: var(--primary); margin-bottom: 1rem;"></i>
