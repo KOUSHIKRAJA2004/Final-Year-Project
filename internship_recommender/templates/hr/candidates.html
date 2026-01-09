@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Candidates - HR Portal{% endblock %}
+
+{% block content %}
+<div class="with-sidebar">
+  <div class="sidebar">
+    <h2>HR Portal</h2>
+    <nav>
+      <ul>
+        <li><a href="/hr/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+        <li><a href="/hr/candidates" class="active"><i class="fas fa-users"></i> Candidates</a></li>
+        <li><a href="/hr/jobs"><i class="fas fa-briefcase"></i> Job Postings</a></li>
+        <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <div class="main-content">
+    <div class="top-nav">
+      <h1>Candidate Search</h1>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div class="user-avatar">
+          {{ (user.full_name or user.username)[0]|upper if user else 'H' }}
+        </div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <h2>Search & Filter Candidates</h2>
+      
+      <!-- Search Form -->
+      <div class="card" style="margin-bottom: 2rem;">
+        <form method="GET" action="/hr/candidates" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+          <div class="form-group">
+            <label>Skills (comma-separated)</label>
+            <input type="text" name="skills" value="{{ search_skills }}" placeholder="Python, Java, React">
+          </div>
+          <div class="form-group">
+            <label>Location</label>
+            <input type="text" name="location" value="{{ search_location }}" placeholder="City, State">
+          </div>
+          <div class="form-group">
+            <label>Degree</label>
+            <input type="text" name="degree" value="{{ search_degree }}" placeholder="B.Tech, B.Sc">
+          </div>
+          <div class="form-group">
+            <label>Stream</label>
+            <input type="text" name="stream" value="{{ search_stream }}" placeholder="CS, IT, ECE">
+          </div>
+          <div class="form-group" style="display: flex; align-items: end; gap: 0.5rem;">
+            <button type="submit" class="btn" style="flex: 1;"><i class="fas fa-search"></i> Search</button>
+            <a href="/hr/candidates" class="btn btn-secondary">Clear</a>
+          </div>
+        </form>
+      </div>
+
+      <!-- Results -->
+      <div class="card">
+        <h3>Found {{ candidates|length }} Candidate(s)</h3>
+        
+        {% if candidates %}
+          <div style="display: grid; gap: 1.5rem; margin-top: 1.5rem;">
+            {% for candidate in candidates %}
+            <div style="border: 1px solid #ddd; border-radius: var(--border-radius); padding: 1.5rem; background: var(--accent); transition: var(--transition);">
+              <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem;">
+                <div style="flex: 1; min-width: 300px;">
+                  <h4 style="margin: 0 0 0.5rem 0; color: var(--primary);">
+                    <i class="fas fa-user"></i> {{ candidate.full_name or candidate.username }}
+                  </h4>
+                  <p style="margin: 0.5rem 0; color: #666;">
+                    <i class="fas fa-envelope"></i> {{ candidate.email }}
+                  </p>
+                  {% if candidate.degree %}
+                  <p style="margin: 0.5rem 0; color: #666;">
+                    <i class="fas fa-graduation-cap"></i> {{ candidate.degree }}
+                    {% if candidate.study_year %} (Year {{ candidate.study_year }}){% endif %}
+                    {% if candidate.stream %} - {{ candidate.stream }}{% endif %}
+                  </p>
+                  {% endif %}
+                  {% if candidate.sector %}
+                  <p style="margin: 0.5rem 0; color: #666;">
+                    <i class="fas fa-building"></i> Sector: {{ candidate.sector }}
+                  </p>
+                  {% endif %}
+                  {% if candidate.skills %}
+                  <div style="margin-top: 1rem;">
+                    <strong>Skills:</strong>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                      {% for skill in candidate.skills.split(',') %}
+                        <span style="background: var(--primary); color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">{{ skill.strip() }}</span>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  {% endif %}
+                  <p style="margin-top: 1rem; color: #999; font-size: 0.9rem;">
+                    <i class="fas fa-calendar"></i> Joined: {{ candidate.created_at[:10] if candidate.created_at else 'N/A' }}
+                  </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <a href="/hr/candidate/{{ candidate.id }}" class="btn">
+                    <i class="fas fa-eye"></i> View Profile
+                  </a>
+                  {% if candidate.resume_path %}
+                  <a href="/uploads/{{ candidate.resume_path.split('/')[-1] }}" target="_blank" class="btn btn-secondary" style="text-align: center;">
+                    <i class="fas fa-file-pdf"></i> Resume
+                  </a>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div style="text-align: center; padding: 3rem; color: #999;">
+            <i class="fas fa-search" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+            <p>No candidates found matching your criteria.</p>
+            <p>Try adjusting your search filters or <a href="/hr/candidates">view all candidates</a>.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px var(--shadow);
+  }
+</style>
+{% endblock %}
+

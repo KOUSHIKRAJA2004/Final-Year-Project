@@ -29,6 +29,7 @@ class DatabaseManager:
             if self.connection.is_connected():
                 print("Connected to MySQL database")
                 self.create_tables()
+                self._ensure_migrations()
         except Error as e:
             print(f"Error connecting to MySQL: {e}")
             # Fallback to SQLite for development
@@ -42,8 +43,23 @@ class DatabaseManager:
             self.connection = sqlite3.connect('internship_recommender.db', check_same_thread=False)
             print("Using SQLite fallback database")
             self.create_tables()
+            self._ensure_migrations()
         except Exception as e:
             print(f"Error setting up SQLite fallback: {e}")
+    
+    def _ensure_migrations(self):
+        """Ensure migrations are run even if tables already exist"""
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            is_sqlite = 'sqlite' in str(type(self.connection)).lower()
+            self._run_migrations(cursor, is_sqlite)
+            self.connection.commit()
+        except Exception as e:
+            print(f"Error ensuring migrations: {e}")
+        finally:
+            if cursor:
+                cursor.close()
     
     def create_tables(self):
         """Create database tables if they don't exist"""
@@ -64,6 +80,7 @@ class DatabaseManager:
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     full_name TEXT,
+                    user_role TEXT DEFAULT 'student',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT 1
@@ -121,6 +138,7 @@ class DatabaseManager:
                     password_hash VARCHAR(255) NOT NULL,
                     salt VARCHAR(32) NOT NULL,
                     full_name VARCHAR(100),
+                    user_role VARCHAR(20) DEFAULT 'student',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT TRUE
@@ -175,6 +193,9 @@ class DatabaseManager:
             cursor.execute(create_sessions_table)
             cursor.execute(create_recommendations_table)
             
+            # Run migrations for existing databases
+            self._run_migrations(cursor, is_sqlite)
+            
             self.connection.commit()
             print("Database tables created successfully")
             
@@ -183,6 +204,53 @@ class DatabaseManager:
         finally:
             if cursor:
                 cursor.close()
+    
+    def _run_migrations(self, cursor, is_sqlite):
+        """Run database migrations for existing databases"""
+        try:
+            # Check if users table exists first
+            if is_sqlite:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if not cursor.fetchone():
+                    return  # Table doesn't exist yet, will be created with new schema
+                
+                # Check if user_role column exists in users table
+                cursor.execute("PRAGMA table_info(users)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                if 'user_role' not in columns:
+                    print("Migrating: Adding user_role column to users table...")
+                    cursor.execute("ALTER TABLE users ADD COLUMN user_role TEXT DEFAULT 'student'")
+                    # Update existing rows to have 'student' as default
+                    cursor.execute("UPDATE users SET user_role = 'student' WHERE user_role IS NULL")
+                    print("Migration completed: user_role column added")
+            else:
+                # For MySQL, check if table exists
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM INFORMATION_SCHEMA.TABLES 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'users'
+                """)
+                if cursor.fetchone()[0] == 0:
+                    return  # Table doesn't exist yet
+                
+                # Check if column exists
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'users' 
+                    AND COLUMN_NAME = 'user_role'
+                """)
+                if cursor.fetchone()[0] == 0:
+                    print("Migrating: Adding user_role column to users table...")
+                    cursor.execute("ALTER TABLE users ADD COLUMN user_role VARCHAR(20) DEFAULT 'student'")
+                    # Update existing rows to have 'student' as default
+                    cursor.execute("UPDATE users SET user_role = 'student' WHERE user_role IS NULL")
+                    print("Migration completed: user_role column added")
+        except Exception as e:
+            print(f"Error running migrations: {e}")
     
     def _get_placeholder(self):
         """Get the correct placeholder for the current database"""
@@ -220,7 +288,7 @@ class DatabaseManager:
         password_hash, _ = self.hash_password(password, salt)
         return password_hash == stored_hash
     
-    def create_user(self, username: str, email: str, password: str, full_name: str = None) -> bool:
+    def create_user(self, username: str, email: str, password: str, full_name: str = None, user_role: str = 'student') -> bool:
         """Create a new user"""
         cursor = None
         try:
@@ -239,9 +307,9 @@ class DatabaseManager:
             
             # Insert user
             cursor.execute(f"""
-                INSERT INTO users (username, email, password_hash, salt, full_name)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-            """, (username, email, password_hash, salt, full_name))
+                INSERT INTO users (username, email, password_hash, salt, full_name, user_role)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (username, email, password_hash, salt, full_name, user_role))
             
             self.connection.commit()
             return True
@@ -261,7 +329,7 @@ class DatabaseManager:
             
             placeholder = self._get_placeholder()
             cursor.execute(f"""
-                SELECT id, username, email, password_hash, salt, full_name, is_active
+                SELECT id, username, email, password_hash, salt, full_name, user_role, is_active
                 FROM users WHERE username = {placeholder} OR email = {placeholder}
             """, (username, username))
             
@@ -311,12 +379,21 @@ class DatabaseManager:
             cursor = self._get_cursor(dictionary=True)
             
             placeholder = self._get_placeholder()
-            cursor.execute(f"""
-                SELECT u.id, u.username, u.email, u.full_name, u.is_active
-                FROM users u
-                JOIN user_sessions s ON u.id = s.user_id
-                WHERE s.session_token = {placeholder} AND s.expires_at > datetime('now') AND u.is_active = 1
-            """, (session_token,))
+            is_sqlite = 'sqlite' in str(type(self.connection)).lower()
+            if is_sqlite:
+                cursor.execute(f"""
+                    SELECT u.id, u.username, u.email, u.full_name, u.user_role, u.is_active
+                    FROM users u
+                    JOIN user_sessions s ON u.id = s.user_id
+                    WHERE s.session_token = {placeholder} AND s.expires_at > datetime('now') AND u.is_active = 1
+                """, (session_token,))
+            else:
+                cursor.execute(f"""
+                    SELECT u.id, u.username, u.email, u.full_name, u.user_role, u.is_active
+                    FROM users u
+                    JOIN user_sessions s ON u.id = s.user_id
+                    WHERE s.session_token = {placeholder} AND s.expires_at > NOW() AND u.is_active = 1
+                """, (session_token,))
             
             user = cursor.fetchone()
             return user
@@ -440,6 +517,263 @@ class DatabaseManager:
             if cursor:
                 cursor.close()
     
+    def search_candidates(self, skills=None, role=None, location=None, degree=None, stream=None, limit=50):
+        """Search candidates based on filters"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            is_sqlite = 'sqlite' in str(type(self.connection)).lower()
+            
+            query = """
+                SELECT u.id, u.username, u.email, u.full_name, u.created_at,
+                       p.degree, p.study_year, p.sector, p.stream, p.skills, p.resume_path
+                FROM users u
+                LEFT JOIN user_profiles p ON u.id = p.user_id
+                WHERE u.user_role = 'student' AND u.is_active = 1
+            """
+            params = []
+            
+            if skills:
+                skills_list = [s.strip().lower() for s in skills.split(',') if s.strip()]
+                if skills_list:
+                    if is_sqlite:
+                        query += " AND ("
+                        for i, skill in enumerate(skills_list):
+                            if i > 0:
+                                query += " OR "
+                            query += f"LOWER(p.skills) LIKE {placeholder}"
+                            params.append(f"%{skill}%")
+                        query += ")"
+                    else:
+                        query += " AND ("
+                        for i, skill in enumerate(skills_list):
+                            if i > 0:
+                                query += " OR "
+                            query += f"LOWER(p.skills) LIKE {placeholder}"
+                            params.append(f"%{skill}%")
+                        query += ")"
+            
+            if degree:
+                query += f" AND p.degree = {placeholder}"
+                params.append(degree)
+            
+            if stream:
+                query += f" AND p.stream = {placeholder}"
+                params.append(stream)
+            
+            query += f" ORDER BY u.created_at DESC LIMIT {placeholder}"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            return cursor.fetchall()
+            
+        except Exception as e:
+            print(f"Error searching candidates: {e}")
+            return []
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_all_candidates(self, limit=100):
+        """Get all candidate profiles"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            
+            query = f"""
+                SELECT u.id, u.username, u.email, u.full_name, u.created_at,
+                       p.degree, p.study_year, p.sector, p.stream, p.skills, p.resume_path
+                FROM users u
+                LEFT JOIN user_profiles p ON u.id = p.user_id
+                WHERE u.user_role = 'student' AND u.is_active = 1
+                ORDER BY u.created_at DESC
+                LIMIT {placeholder}
+            """
+            cursor.execute(query, (limit,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error getting candidates: {e}")
+            return []
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_candidate_by_id(self, candidate_id):
+        """Get detailed candidate profile"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            
+            query = f"""
+                SELECT u.id, u.username, u.email, u.full_name, u.created_at,
+                       p.degree, p.study_year, p.sector, p.stream, p.skills, p.resume_path
+                FROM users u
+                LEFT JOIN user_profiles p ON u.id = p.user_id
+                WHERE u.id = {placeholder} AND u.user_role = 'student' AND u.is_active = 1
+            """
+            cursor.execute(query, (candidate_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting candidate: {e}")
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def create_job_posting(self, hr_user_id, title, description, required_skills, location, salary_range_low=None, salary_range_high=None):
+        """Create a new job posting"""
+        cursor = None
+        try:
+            cursor = self._get_cursor()
+            placeholder = self._get_placeholder()
+            is_sqlite = 'sqlite' in str(type(self.connection)).lower()
+            
+            if is_sqlite:
+                create_jobs_table = """
+                CREATE TABLE IF NOT EXISTS job_postings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hr_user_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    required_skills TEXT,
+                    location TEXT,
+                    salary_range_low INTEGER,
+                    salary_range_high INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1,
+                    FOREIGN KEY (hr_user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            else:
+                create_jobs_table = """
+                CREATE TABLE IF NOT EXISTS job_postings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    hr_user_id INT NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    required_skills TEXT,
+                    location VARCHAR(100),
+                    salary_range_low INT,
+                    salary_range_high INT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    FOREIGN KEY (hr_user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            cursor.execute(create_jobs_table)
+            
+            cursor.execute(f"""
+                INSERT INTO job_postings (hr_user_id, title, description, required_skills, location, salary_range_low, salary_range_high)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (hr_user_id, title, description, required_skills, location, salary_range_low, salary_range_high))
+            
+            self.connection.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            print(f"Error creating job posting: {e}")
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_job_postings(self, hr_user_id=None):
+        """Get job postings"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            
+            if hr_user_id:
+                query = f"""
+                    SELECT * FROM job_postings 
+                    WHERE hr_user_id = {placeholder} AND is_active = 1
+                    ORDER BY created_at DESC
+                """
+                cursor.execute(query, (hr_user_id,))
+            else:
+                query = """
+                    SELECT * FROM job_postings 
+                    WHERE is_active = 1
+                    ORDER BY created_at DESC
+                """
+                cursor.execute(query)
+            
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error getting job postings: {e}")
+            return []
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_job_posting_by_id(self, job_id):
+        """Get a specific job posting"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            
+            query = f"SELECT * FROM job_postings WHERE id = {placeholder} AND is_active = 1"
+            cursor.execute(query, (job_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting job posting: {e}")
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def update_user_role(self, user_id: int, new_role: str) -> bool:
+        """Update user role"""
+        cursor = None
+        try:
+            if new_role not in ['student', 'hr']:
+                return False
+            
+            cursor = self._get_cursor()
+            placeholder = self._get_placeholder()
+            
+            cursor.execute(f"""
+                UPDATE users 
+                SET user_role = {placeholder}
+                WHERE id = {placeholder}
+            """, (new_role, user_id))
+            
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error updating user role: {e}")
+            return False
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_user_by_username(self, username: str):
+        """Get user by username"""
+        cursor = None
+        try:
+            cursor = self._get_cursor(dictionary=True)
+            placeholder = self._get_placeholder()
+            
+            cursor.execute(f"""
+                SELECT id, username, email, full_name, user_role, is_active
+                FROM users 
+                WHERE username = {placeholder} OR email = {placeholder}
+            """, (username, username))
+            
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting user by username: {e}")
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+
     def close(self):
         """Close database connection"""
         if self.connection and self.connection.is_connected():

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Candidate Insights - HR Portal{% endblock %}
+
+{% block content %}
+<div class="with-sidebar">
+  <div class="sidebar">
+    <h2>HR Portal</h2>
+    <nav>
+      <ul>
+        <li><a href="/hr/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+        <li><a href="/hr/candidates"><i class="fas fa-users"></i> Candidates</a></li>
+        <li><a href="/hr/jobs"><i class="fas fa-briefcase"></i> Job Postings</a></li>
+        <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <div class="main-content">
+    <div class="top-nav">
+      <h1>AI-Powered Candidate Insights</h1>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <a href="/hr/job/{{ job_posting.id }}/match" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
+        <div class="user-avatar">
+          {{ (user.full_name or user.username)[0]|upper if user else 'H' }}
+        </div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <!-- Job & Candidate Header -->
+      <div class="card" style="margin-bottom: 2rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+          <div>
+            <h3 style="color: var(--primary); margin-top: 0;">Job Position</h3>
+            <h4>{{ job_posting.title }}</h4>
+            {% if job_posting.location %}
+            <p><i class="fas fa-map-marker-alt"></i> {{ job_posting.location }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <h3 style="color: var(--primary); margin-top: 0;">Candidate</h3>
+            <h4>{{ candidate.full_name or candidate.username }}</h4>
+            <p><i class="fas fa-envelope"></i> {{ candidate.email }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match Score -->
+      <div class="card" style="margin-bottom: 2rem; background: linear-gradient(135deg, {% if insights.match_score.overall_score >= 85 %}#28a745{% elif insights.match_score.overall_score >= 70 %}#ffc107{% else %}#dc3545{% endif %} 0%, {% if insights.match_score.overall_score >= 85 %}#20c997{% elif insights.match_score.overall_score >= 70 %}#fd7e14{% else %}#c82333{% endif %} 100%); color: white;">
+        <div style="text-align: center;">
+          <h2 style="color: white; margin: 0.5rem 0;">Overall Match Score</h2>
+          <div style="font-size: 5rem; font-weight: bold; margin: 1rem 0;">{{ insights.match_score.overall_score }}%</div>
+          <p style="font-size: 1.2rem; margin: 0;">{{ insights.match_score.recommendation }}</p>
+        </div>
+      </div>
+
+      <!-- Detailed Metrics -->
+      <div class="grid" style="margin-bottom: 2rem;">
+        <div class="card">
+          <h3><i class="fas fa-check-circle"></i> Skill Match Score</h3>
+          <div style="font-size: 2.5rem; font-weight: bold; color: var(--primary); margin: 1rem 0;">
+            {{ insights.match_score.skill_match_score }}%
+          </div>
+          <div style="background: #e0e0e0; height: 20px; border-radius: 10px; margin-top: 1rem;">
+            <div style="background: var(--primary); height: 100%; width: {{ insights.match_score.skill_match_score }}%; border-radius: 10px;"></div>
+          </div>
+          <p style="margin-top: 0.5rem; color: #666;">
+            {{ insights.match_score.matched_count }} of {{ insights.match_score.total_required }} required skills matched
+          </p>
+        </div>
+
+        <div class="card">
+          <h3><i class="fas fa-chart-pie"></i> Skill Coverage</h3>
+          <div style="font-size: 2.5rem; font-weight: bold; color: var(--primary); margin: 1rem 0;">
+            {{ insights.match_score.skill_coverage }}%
+          </div>
+          <p style="color: #666;">Percentage of candidate's skills that are relevant to this role</p>
+        </div>
+
+        {% if insights.estimated_salary %}
+        <div class="card">
+          <h3><i class="fas fa-rupee-sign"></i> Estimated Salary</h3>
+          <div style="font-size: 2rem; font-weight: bold; color: var(--primary); margin: 1rem 0;">
+            ₹{{ insights.estimated_salary.low|int / 100000 }} - ₹{{ insights.estimated_salary.high|int / 100000 }} LPA
+          </div>
+          <p style="color: #666;">Based on candidate's skills and experience</p>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Matched Skills -->
+      {% if insights.match_score.matched_skills %}
+      <div class="card" style="margin-bottom: 2rem;">
+        <h3><i class="fas fa-check-double"></i> Matched Skills ({{ insights.match_score.matched_skills|length }})</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem;">
+          {% for skill in insights.match_score.matched_skills %}
+            <span style="background: #28a745; color: white; padding: 0.5rem 1rem; border-radius: 25px; font-size: 0.95rem; font-weight: 500;">{{ skill }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Missing Skills -->
+      {% if insights.match_score.missing_skills %}
+      <div class="card" style="margin-bottom: 2rem;">
+        <h3><i class="fas fa-exclamation-triangle"></i> Missing Skills ({{ insights.match_score.missing_skills|length }})</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem;">
+          {% for skill in insights.match_score.missing_skills %}
+            <span style="background: #dc3545; color: white; padding: 0.5rem 1rem; border-radius: 25px; font-size: 0.95rem; font-weight: 500;">{{ skill }}</span>
+          {% endfor %}
+        </div>
+        <p style="margin-top: 1rem; color: #666;">
+          <i class="fas fa-info-circle"></i> These skills may require training or can be learned on the job.
+        </p>
+      </div>
+      {% endif %}
+
+      <!-- Skill Gap Analysis -->
+      {% if insights.skill_gap %}
+      <div class="card" style="margin-bottom: 2rem;">
+        <h3><i class="fas fa-chart-bar"></i> Skill Gap Analysis</h3>
+        {% if insights.skill_gap.have %}
+        <div style="margin-top: 1rem;">
+          <h4>Candidate Has:</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+            {% for skill in insights.skill_gap.have %}
+              <span style="background: #17a2b8; color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">{{ skill }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if insights.skill_gap.ranked_missing %}
+        <div style="margin-top: 1.5rem;">
+          <h4>Priority Skills to Develop (Ranked by Importance):</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+            {% for skill in insights.skill_gap.ranked_missing[:10] %}
+              <span style="background: #ffc107; color: #333; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500;">{{ skill }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Candidate Profile Summary -->
+      <div class="card">
+        <h3><i class="fas fa-user-circle"></i> Candidate Profile Summary</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+          {% if insights.candidate_profile.degree %}
+          <div>
+            <strong>Degree:</strong><br>{{ insights.candidate_profile.degree }}
+          </div>
+          {% endif %}
+          {% if insights.candidate_profile.study_year %}
+          <div>
+            <strong>Study Year:</strong><br>Year {{ insights.candidate_profile.study_year }}
+          </div>
+          {% endif %}
+          {% if insights.candidate_profile.stream %}
+          <div>
+            <strong>Stream:</strong><br>{{ insights.candidate_profile.stream }}
+          </div>
+          {% endif %}
+          {% if insights.candidate_profile.sector %}
+          <div>
+            <strong>Sector:</strong><br>{{ insights.candidate_profile.sector }}
+          </div>
+          {% endif %}
+        </div>
+        <div style="margin-top: 1.5rem;">
+          <a href="/hr/candidate/{{ candidate.id }}" class="btn">View Full Profile</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px var(--shadow);
+  }
+</style>
+{% endblock %}
+

@@ -11,6 +11,9 @@ from utils.database import db
 from utils.xai_explainer import (
     get_salary_explainer, get_recommendation_explainer, get_skill_gap_explainer
 )
+from utils.candidate_matcher import (
+    match_candidates_to_job, search_and_match_candidates, get_candidate_insights
+)
 
 def format_salary_lpa(rupees):
     """Convert rupees to LPA (Lakhs Per Annum) format with 1 decimal place."""
@@ -53,6 +56,21 @@ def get_current_user():
         return db.get_user_by_session(session.get('session_token'))
     return None
 
+def hr_required(f):
+    """Decorator to require HR role for protected routes"""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            flash('Please login to access this page')
+            return redirect(url_for('login'))
+        if user.get('user_role') != 'hr':
+            flash('Access denied. HR role required.')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route("/", methods=["GET"])
 def index():
     user = get_current_user()
@@ -93,7 +111,6 @@ def register():
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "").strip()
     confirm_password = request.form.get("confirm_password", "").strip()
-    full_name = request.form.get("full_name", "").strip()
     
     if not all([username, email, password, confirm_password]):
         flash("Please fill in all fields")
@@ -107,7 +124,8 @@ def register():
         flash("Password must be at least 6 characters long")
         return redirect(url_for('register'))
     
-    success = db.create_user(username, email, password, full_name)
+    # Default to student role for simple registration
+    success = db.create_user(username, email, password, full_name=None, user_role='student')
     if success:
         flash("Account created successfully! Please login.")
         return redirect(url_for('login'))
@@ -156,6 +174,11 @@ def profile():
 @login_required
 def dashboard():
     user = get_current_user()
+    
+    # Redirect HR users to HR dashboard
+    if user.get('user_role') == 'hr':
+        return redirect(url_for('hr_dashboard'))
+    
     profile = db.get_user_profile(user['id'])
     history = db.get_recommendation_history(user['id'], limit=5)
     
@@ -435,6 +458,315 @@ def api_explain_skill_gap():
         return jsonify(explanation)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ==================== HR ROUTES ====================
+
+@app.route("/hr/dashboard")
+@login_required
+@hr_required
+def hr_dashboard():
+    """HR Dashboard - Overview of candidates and job postings with analysis"""
+    user = get_current_user()
+    
+    # Get all candidates count
+    all_candidates = db.get_all_candidates(limit=1000)
+    total_candidates = len(all_candidates)
+    
+    # Get recent candidates for preview
+    recent_candidates = db.get_all_candidates(limit=10)
+    
+    # Get job postings
+    job_postings = db.get_job_postings(hr_user_id=user['id'])
+    
+    # Get analyzed matches for the most recent job posting (if exists)
+    analyzed_results = None
+    analysis_stats = None
+    selected_job_id = request.args.get('job_id', type=int)
+    selected_job = None
+    
+    if selected_job_id:
+        selected_job = db.get_job_posting_by_id(selected_job_id)
+        if selected_job and selected_job.get('hr_user_id') == user['id']:
+            from utils.candidate_matcher import search_and_match_candidates
+            analyzed_results = search_and_match_candidates(selected_job, {})
+            # Calculate statistics
+            if analyzed_results:
+                excellent = len([r for r in analyzed_results if r['overall_score'] >= 85])
+                good = len([r for r in analyzed_results if 70 <= r['overall_score'] < 85])
+                moderate = len([r for r in analyzed_results if 50 <= r['overall_score'] < 70])
+                weak = len([r for r in analyzed_results if r['overall_score'] < 50])
+                avg_score = sum(r['overall_score'] for r in analyzed_results) / len(analyzed_results) if analyzed_results else 0
+                
+                analysis_stats = {
+                    'total_candidates': len(analyzed_results),
+                    'excellent_matches': excellent,
+                    'good_matches': good,
+                    'moderate_matches': moderate,
+                    'weak_matches': weak,
+                    'average_score': round(avg_score, 2)
+                }
+    elif job_postings:
+        # Auto-analyze the most recent job posting
+        selected_job = job_postings[0]
+        from utils.candidate_matcher import search_and_match_candidates
+        analyzed_results = search_and_match_candidates(selected_job, {})
+        # Calculate statistics
+        if analyzed_results:
+            excellent = len([r for r in analyzed_results if r['overall_score'] >= 85])
+            good = len([r for r in analyzed_results if 70 <= r['overall_score'] < 85])
+            moderate = len([r for r in analyzed_results if 50 <= r['overall_score'] < 70])
+            weak = len([r for r in analyzed_results if r['overall_score'] < 50])
+            avg_score = sum(r['overall_score'] for r in analyzed_results) / len(analyzed_results) if analyzed_results else 0
+            
+            analysis_stats = {
+                'total_candidates': len(analyzed_results),
+                'excellent_matches': excellent,
+                'good_matches': good,
+                'moderate_matches': moderate,
+                'weak_matches': weak,
+                'average_score': round(avg_score, 2)
+            }
+    
+    return render_template("hr/dashboard.html", 
+                         user=user, 
+                         candidates=recent_candidates,
+                         total_candidates=total_candidates,
+                         job_postings=job_postings,
+                         analyzed_results=analyzed_results,
+                         selected_job_id=selected_job_id,
+                         selected_job=selected_job,
+                         analysis_stats=analysis_stats)
+
+@app.route("/hr/candidates")
+@login_required
+@hr_required
+def hr_candidates():
+    """HR Candidate Search and Browse"""
+    user = get_current_user()
+    
+    # Get search filters
+    skills = request.args.get("skills", "").strip()
+    location = request.args.get("location", "").strip()
+    degree = request.args.get("degree", "").strip()
+    stream = request.args.get("stream", "").strip()
+    
+    # Search candidates
+    if any([skills, location, degree, stream]):
+        candidates = db.search_candidates(
+            skills=skills if skills else None,
+            location=location if location else None,
+            degree=degree if degree else None,
+            stream=stream if stream else None,
+            limit=100
+        )
+    else:
+        candidates = db.get_all_candidates(limit=100)
+    
+    return render_template("hr/candidates.html", user=user, candidates=candidates,
+                         search_skills=skills, search_location=location, 
+                         search_degree=degree, search_stream=stream)
+
+@app.route("/hr/candidate/<int:candidate_id>")
+@login_required
+@hr_required
+def hr_candidate_detail(candidate_id):
+    """View detailed candidate profile"""
+    user = get_current_user()
+    candidate = db.get_candidate_by_id(candidate_id)
+    
+    if not candidate:
+        flash("Candidate not found")
+        return redirect(url_for('hr_candidates'))
+    
+    # Get candidate's recommendation history
+    history = db.get_recommendation_history(candidate_id, limit=10)
+    
+    return render_template("hr/candidate_detail.html", user=user, candidate=candidate, history=history)
+
+@app.route("/hr/jobs", methods=["GET", "POST"])
+@login_required
+@hr_required
+def hr_jobs():
+    """Manage job postings"""
+    user = get_current_user()
+    
+    if request.method == "POST":
+        # Create new job posting
+        title = request.form.get("title", "").strip()
+        description = request.form.get("description", "").strip()
+        required_skills = request.form.get("required_skills", "").strip()
+        location = request.form.get("location", "").strip()
+        salary_low = request.form.get("salary_low", "").strip()
+        salary_high = request.form.get("salary_high", "").strip()
+        
+        if not title:
+            flash("Job title is required")
+            return redirect(url_for('hr_jobs'))
+        
+        salary_low = int(salary_low) if salary_low and salary_low.isdigit() else None
+        salary_high = int(salary_high) if salary_high and salary_high.isdigit() else None
+        
+        job_id = db.create_job_posting(
+            user['id'], title, description, required_skills, 
+            location, salary_low, salary_high
+        )
+        
+        if job_id:
+            flash("Job posting created successfully!")
+        else:
+            flash("Error creating job posting")
+        
+        return redirect(url_for('hr_jobs'))
+    
+    # GET: Show all job postings
+    job_postings = db.get_job_postings(hr_user_id=user['id'])
+    return render_template("hr/jobs.html", user=user, job_postings=job_postings)
+
+@app.route("/hr/job/<int:job_id>/match")
+@login_required
+@hr_required
+def hr_job_match(job_id):
+    """Match candidates to a specific job posting"""
+    user = get_current_user()
+    job_posting = db.get_job_posting_by_id(job_id)
+    
+    if not job_posting or job_posting.get('hr_user_id') != user['id']:
+        flash("Job posting not found")
+        return redirect(url_for('hr_jobs'))
+    
+    # Get search filters
+    skills = request.args.get("skills", "").strip()
+    location = request.args.get("location", "").strip()
+    degree = request.args.get("degree", "").strip()
+    stream = request.args.get("stream", "").strip()
+    
+    filters = {
+        'skills': skills if skills else None,
+        'location': location if location else None,
+        'degree': degree if degree else None,
+        'stream': stream if stream else None
+    }
+    
+    # Search and match candidates
+    matched_candidates = search_and_match_candidates(job_posting, filters)
+    
+    return render_template("hr/job_match.html", user=user, job_posting=job_posting,
+                         matched_candidates=matched_candidates, filters=filters)
+
+@app.route("/hr/job/<int:job_id>/candidate/<int:candidate_id>")
+@login_required
+@hr_required
+def hr_job_candidate_insights(job_id, candidate_id):
+    """Get detailed insights for a candidate matched to a job"""
+    user = get_current_user()
+    job_posting = db.get_job_posting_by_id(job_id)
+    candidate = db.get_candidate_by_id(candidate_id)
+    
+    if not job_posting or job_posting.get('hr_user_id') != user['id']:
+        flash("Job posting not found")
+        return redirect(url_for('hr_jobs'))
+    
+    if not candidate:
+        flash("Candidate not found")
+        return redirect(url_for('hr_job_match', job_id=job_id))
+    
+    # Get detailed insights
+    insights = get_candidate_insights(candidate, job_posting)
+    
+    return render_template("hr/candidate_insights.html", user=user, 
+                         job_posting=job_posting, candidate=candidate, insights=insights)
+
+@app.route("/api/hr/match_candidates", methods=["POST"])
+@login_required
+@hr_required
+def api_match_candidates():
+    """API endpoint for candidate matching"""
+    data = request.get_json(force=True) or {}
+    job_id = data.get("job_id")
+    
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    
+    job_posting = db.get_job_posting_by_id(job_id)
+    if not job_posting:
+        return jsonify({"error": "Job posting not found"}), 404
+    
+    filters = data.get("filters", {})
+    matched = search_and_match_candidates(job_posting, filters)
+    
+    return jsonify({"matched_candidates": matched})
+
+@app.route("/promote-to-hr", methods=["GET", "POST"])
+def promote_to_hr():
+    """Simple route to promote a user to HR role (for testing/setup)"""
+    messages = []
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        if not username:
+            messages.append("Username is required")
+        else:
+            user = db.get_user_by_username(username)
+            if not user:
+                messages.append(f"User '{username}' not found")
+            else:
+                success = db.update_user_role(user['id'], 'hr')
+                if success:
+                    messages.append(f"✓ User '{username}' has been promoted to HR role! Please log out and log back in.")
+                else:
+                    messages.append(f"✗ Error promoting user '{username}'")
+    
+    # Get list of all users for reference
+    all_users = []
+    try:
+        cursor = db._get_cursor(dictionary=True)
+        cursor.execute("SELECT id, username, email, user_role FROM users ORDER BY id")
+        all_users = cursor.fetchall()
+        cursor.close()
+    except:
+        pass
+    
+    messages_html = ""
+    if messages:
+        messages_html = "<div style='padding: 10px; margin: 10px 0; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px;'>" + "<br>".join(messages) + "</div>"
+    
+    users_list = ""
+    if all_users:
+        users_list = "<h3>All Users:</h3><table style='width: 100%; border-collapse: collapse; margin-top: 10px;'><tr style='background: #f0f0f0;'><th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>ID</th><th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>Username</th><th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>Email</th><th style='padding: 8px; text-align: left; border: 1px solid #ddd;'>Role</th></tr>"
+        for u in all_users:
+            role_color = "#28a745" if u.get('user_role') == 'hr' else "#6c757d"
+            users_list += f"<tr><td style='padding: 8px; border: 1px solid #ddd;'>{u.get('id')}</td><td style='padding: 8px; border: 1px solid #ddd;'>{u.get('username')}</td><td style='padding: 8px; border: 1px solid #ddd;'>{u.get('email')}</td><td style='padding: 8px; border: 1px solid #ddd;'><span style='color: {role_color}; font-weight: bold;'>{u.get('user_role', 'student')}</span></td></tr>"
+        users_list += "</table>"
+    
+    return f"""
+    <html>
+    <head><title>Promote to HR</title></head>
+    <body style="font-family: Arial; max-width: 700px; margin: 50px auto; padding: 20px;">
+        <h2>Promote User to HR</h2>
+        {messages_html}
+        <form method="POST" style="margin: 20px 0;">
+            <p>
+                <label><strong>Username or Email:</strong></label><br>
+                <input type="text" name="username" required style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
+            </p>
+            <button type="submit" style="background: #ff7b00; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">
+                Promote to HR
+            </button>
+        </form>
+        {users_list}
+        <p style="margin-top: 20px; color: #666; font-size: 0.9em;">
+            <strong>Note:</strong> After promoting, the user must log out and log back in to access the HR dashboard.
+        </p>
+        <p><a href="/login" style="color: #ff7b00;">Go to Login</a> | <a href="/" style="color: #ff7b00;">Home</a></p>
+    </body>
+    </html>
+    """
+
+@app.route("/uploads/<filename>")
+@login_required
+def serve_resume(filename):
+    """Serve uploaded resume files"""
+    from flask import send_from_directory
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
