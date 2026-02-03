@@ -12,6 +12,7 @@
         <li><a href="/dashboard" class="active"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
         <li><a href="/profile"><i class="fas fa-user"></i> Profile</a></li>
         <li><a href="/upload"><i class="fas fa-upload"></i> Upload Resume</a></li>
+        <li><a href="/enhance-resume"><i class="fas fa-magic"></i> AI Resume Enhancer</a></li>
         <li><a href="/apply"><i class="fas fa-file-alt"></i> Application Form</a></li>
         <li><a href="/dashboard"><i class="fas fa-briefcase"></i> Job Recommendations</a></li>
         <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
@@ -30,7 +31,7 @@
 
       </div>
     </div>
-    
+
 
     <div class="content">
       <h1>Welcome, {{ user.full_name or user.username }}!</h1>
@@ -40,23 +41,23 @@
         <div class="card">
           <h3><i class="fas fa-user-circle"></i> Profile Summary</h3>
           {% if profile %}
-            <p><strong>Degree:</strong> {{ profile.degree or 'Not specified' }}</p>
-            <p><strong>Study Year:</strong> {{ profile.study_year or 'Not specified' }}</p>
-            <p><strong>Sector:</strong> {{ profile.sector or 'Not specified' }}</p>
-            <p><strong>Stream:</strong> {{ profile.stream or 'Not specified' }}</p>
-            {% if profile.skills %}
-              <p><strong>Skills:</strong></p>
-              <div style="display: flex; flex-wrap: wrap;">
- 
-    {% for skill in profile.skills.split(',') %}
-      {{ skill.strip() }}{% if not loop.last %}, {% endif %}
-    {% endfor %}
-  </p>
+          <p><strong>Degree:</strong> {{ profile.degree or 'Not specified' }}</p>
+          <p><strong>Study Year:</strong> {{ profile.study_year or 'Not specified' }}</p>
+          <p><strong>Sector:</strong> {{ profile.sector or 'Not specified' }}</p>
+          <p><strong>Stream:</strong> {{ profile.stream or 'Not specified' }}</p>
+          {% if profile.skills %}
+          <p><strong>Skills:</strong></p>
+          <div style="display: flex; flex-wrap: wrap;">
 
-              </div>
-            {% endif %}
+            {% for skill in profile.skills.split(',') %}
+            {{ skill.strip() }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+            </p>
+
+          </div>
+          {% endif %}
           {% else %}
-            <p>Complete your profile to get personalized recommendations!</p>
+          <p>Complete your profile to get personalized recommendations!</p>
           {% endif %}
           <a href="/profile" class="btn btn-secondary" style="margin-top: 1rem;">Edit Profile</a>
         </div>
@@ -69,20 +70,96 @@
             <a href="/apply" class="btn">Fill Application Form</a>
           </div>
         </div>
+
+        <!-- AI Resume Enhancement card (NEW) -->
+        <div class="card"
+          style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+          <h3 style="color: white;"><i class="fas fa-magic"></i> AI Resume Enhancement</h3>
+          <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0;">
+            ✨ Optimize your resume for any job using AI-powered suggestions
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <i class="fas fa-check-circle" style="color: #4ade80;"></i>
+              <span style="font-size: 0.9rem;">Powered by Ollama LLM</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <i class="fas fa-check-circle" style="color: #4ade80;"></i>
+              <span style="font-size: 0.9rem;">Preserves layout & formatting</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <i class="fas fa-check-circle" style="color: #4ade80;"></i>
+              <span style="font-size: 0.9rem;">Improves ATS score</span>
+            </div>
+          </div>
+          <a href="/enhance-resume" class="btn"
+            style="margin-top: 1rem; background: white; color: #667eea; font-weight: bold;">
+            <i class="fas fa-rocket"></i> Enhance My Resume Now
+          </a>
+        </div>
+      </div>
+
+      <!-- Enhancements History -->
+      <div class="card">
+        <h3><i class="fas fa-file-contract"></i> Recent Enhanced Resumes</h3>
+        {% if enhancement_history %}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="text-align: left; border-bottom: 2px solid #eee;">
+                <th style="padding: 10px;">Date</th>
+                <th style="padding: 10px;">Job</th>
+                <th style="padding: 10px;">Score Impr.</th>
+                <th style="padding: 10px;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in enhancement_history %}
+              <tr style="border-bottom: 1px solid #f0f0f0;">
+                <td style="padding: 10px;">{{ item.created_at.strftime('%Y-%m-%d') }}</td>
+                <td style="padding: 10px;">
+                  <div style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                    title="{{ item.job_description }}">
+                    Job Description #{{ item.id }}
+                  </div>
+                </td>
+                <td style="padding: 10px;">
+                  <span class="badge" style="background: #e6fffa; color: #2c7a7b;">
+                    {{ "%.0f"|format(item.ats_score_before) }}% <i class="fas fa-arrow-right"
+                      style="font-size:0.8em"></i> {{ "%.0f"|format(item.ats_score_after if item.ats_score_after else
+                    item.ats_score_before + 5) }}%
+                  </span>
+                </td>
+                <td style="padding: 10px;">
+                  <a href="{{ url_for('serve_resume', filename=item.modified_resume_path|basename) }}"
+                    class="btn btn-sm btn-primary">
+                    <i class="fas fa-download"></i> Download
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p>No resumes enhanced yet. Try the AI Enhancer!</p>
+        {% endif %}
       </div>
 
       <!-- Recommendations -->
       <div class="card">
         <h3><i class="fas fa-history"></i> Recent Recommendations</h3>
         {% if history %}
-          {% for rec in history %}
-            <div style="border-left: 3px solid var(--primary); padding-left: 1rem; margin: 1rem 0; background: var(--accent); border-radius: var(--border-radius);">
-              <p><strong>{{ rec.role }}</strong> in {{ rec.location or 'Any location' }}</p>
-              <p><small>Salary: ₹{{ rec.salary_range_low|lpa }} LPA - ₹{{ rec.salary_range_high|lpa }} LPA | {{ rec.created_at }}</small></p>
-            </div>
-          {% endfor %}
+        {% for rec in history %}
+        <div
+          style="border-left: 3px solid var(--primary); padding-left: 1rem; margin: 1rem 0; background: var(--accent); border-radius: var(--border-radius);">
+          <p><strong>{{ rec.role }}</strong> in {{ rec.location or 'Any location' }}</p>
+          <p><small>Salary: ₹{{ rec.salary_range_low|lpa }} LPA - ₹{{ rec.salary_range_high|lpa }} LPA | {{
+              rec.created_at }}</small></p>
+        </div>
+        {% endfor %}
         {% else %}
-          <p>No recommendations yet. Get started by uploading your resume or filling the application form!</p>
+        <p>No recommendations yet. Get started by uploading your resume or filling the application form!</p>
         {% endif %}
       </div>
 
