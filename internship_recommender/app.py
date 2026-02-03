@@ -431,6 +431,85 @@ def upload():
         skill_gap_explanation=skill_gap_explanation,
     )
 
+@app.route("/recommendations")
+@login_required
+def recommendations():
+    user = get_current_user()
+    
+    # 1. Try to get latest recommendation context (Role, Location, Skills)
+    # Priority: Recommendation History > Profile
+    rec_history = db.get_recommendation_history(user['id'], limit=1)
+    profile = db.get_user_profile(user['id'])
+    
+    role = None
+    location = None
+    skills = []
+    
+    if rec_history:
+        last_rec = rec_history[0]
+        role = last_rec.get('role')
+        location = last_rec.get('location')
+        # DB stores skills as "skill1,skill2" string or similar in 'skills_used' ??
+        # Let's check db schema in database.py: 'skills_used TEXT'
+        # In apply route: db.save_recommendation_history(..., skills, ...)
+        # In save_recommendation_history: ','.join(skills_used)
+        if last_rec.get('skills_used'):
+            skills = last_rec.get('skills_used').split(',')
+    
+    if not role and profile:
+        # Fallback to Profile if history is empty
+        # Profile has degree, sector, stream, skills (string)
+        # But NOT explicit "Target Role". 
+        # We might have to guess or ask user.
+        # For now, let's try to infer or just redirect if missing.
+        role = profile.get('stream') # Weak fallback
+        if profile.get('skills'):
+            skills = profile.get('skills').split(',')
+    
+    if not role:
+        flash("We need to know your Target Role to provide recommendations. Please upload a resume or fill the form.")
+        return redirect(url_for('upload'))
+    
+    # Clean up data
+    role = role.strip()
+    location = location.strip() if location else ""
+    skills = [s.strip() for s in skills if s.strip()]
+    
+    # 2. Run Live Analysis (Getting fresh jobs is better than stale history)
+    have, missing, ranked_missing = analyze_skill_gap(skills, role)
+    learning_path = create_learning_path(ranked_missing, have)
+    
+    # Search jobs (fresh)
+    internships = ddg_search_internships(role, location, top_k=5)
+    if not internships:
+        internships = recommend_internships_from_profile(skills, role, location, top_k=5)
+        
+    for job in internships:
+        if not job.get("location"):
+            job["location"] = location
+            
+        # Add salary estimate to job
+        job_role = find_best_role(job.get("title", "")) or role
+        jlow, jhigh = predict_salary(skills, job_role, experience_years=0)
+        job["salary_low"] = jlow
+        job["salary_high"] = jhigh
+
+    # Overall salary
+    sal_low, sal_high = predict_salary(skills, role, experience_years=0)
+    
+    return render_template(
+        "recommendations.html",
+        user=user,
+        role=role,
+        internships=internships,
+        salary_range=(sal_low, sal_high),
+        have=have,
+        missing=missing,
+        ranked_missing=ranked_missing,
+        learning_path=learning_path
+    )
+
+
 @app.route("/api/predict_salary", methods=["POST"])
 def api_predict_salary():
     data = request.get_json(force=True) or {}
