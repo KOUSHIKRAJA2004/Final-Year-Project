@@ -1,0 +1,237 @@
+{% extends "dashboard.html" %}
+
+{% block content %}
+<style>
+    /* Custom styles for this page */
+    .card {
+        background: var(--secondary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        box-shadow: 0 2px 10px var(--shadow);
+        margin-bottom: 1.5rem;
+    }
+
+    .card-header {
+        padding: 1.5rem;
+        margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+        border-radius: var(--border-radius) var(--border-radius) 0 0;
+    }
+
+    .bg-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .text-white {
+        color: white;
+    }
+
+    .text-white-50 {
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .mb-0 {
+        margin-bottom: 0;
+    }
+
+    .mt-4 {
+        margin-top: 1.5rem;
+    }
+
+    .mt-5 {
+        margin-top: 2rem;
+    }
+
+    .my-5 {
+        margin: 2rem 0;
+    }
+
+    .mb-3 {
+        margin-bottom: 1rem;
+    }
+
+    .alert {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        color: #004085;
+        margin-bottom: 1.5rem;
+    }
+
+    .alert-info {
+        background: #e7f3ff;
+        border-color: #b3d9ff;
+        color: #004085;
+    }
+
+    .text-muted {
+        color: #666;
+        font-size: 0.9rem;
+    }
+
+    .text-center {
+        text-align: center;
+    }
+
+    .row {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 0 -0.75rem;
+    }
+
+    .col-md-4 {
+        flex: 0 0 33.333%;
+        padding: 0 0.75rem;
+    }
+
+    .col-md-12 {
+        flex: 0 0 100%;
+        padding: 0 0.75rem;
+    }
+
+    .btn-lg {
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+    }
+
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #5568d3 0%, #653a8b 100%);
+    }
+
+    .text-primary {
+        color: #667eea;
+    }
+
+    .text-success {
+        color: #28a745;
+    }
+
+    .text-info {
+        color: #17a2b8;
+    }
+
+    .fa-3x {
+        font-size: 3rem;
+    }
+
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem;
+    }
+
+    .shadow-sm {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+
+    @media (max-width: 768px) {
+        .col-md-4 {
+            flex: 0 0 100%;
+            margin-bottom: 1rem;
+        }
+    }
+</style>
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient">
+                    <h2 class="mb-0 text-white">
+                        <i class="fas fa-magic"></i> AI Resume Enhancement
+                    </h2>
+                    <p class="text-white-50 mb-0">Optimize your resume for any job using AI</p>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> <strong>How it works:</strong>
+                    <ol class="mb-0 mt-4">
+                        <li>Upload your resume (DOCX format)</li>
+                        <li>Paste the job description you're applying for</li>
+                        <li>Our AI analyzes the match and suggests improvements</li>
+                        <li>Review and apply changes to download an enhanced resume</li>
+                    </ol>
+                </div>
+
+                {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                {% for message in messages %}
+                <div class="alert {{ 'alert-error' if 'error' in message.lower() or 'not supported' in message.lower() or 'failed' in message.lower() else 'alert-info' }}"
+                    style="background: #ffebe6; color: #d63031; border: 1px solid #fab1a0;">
+                    <i class="fas fa-exclamation-circle"></i> {{ message }}
+                </div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="{{ url_for('enhance_resume') }}" enctype="multipart/form-data" class="mt-4">
+                    <div class="form-group">
+                        <label for="resume"><strong><i class="fas fa-file-word"></i> Upload Resume (DOCX
+                                only)</strong></label>
+                        <input type="file" id="resume" name="resume" accept=".docx" required
+                            style="width: 100%; padding: 0.5rem; border: 2px dashed #667eea; border-radius: var(--border-radius); background: #f8f9ff;">
+                        <small class="text-muted">
+                            Currently supports .docx format only. PDF support coming soon.
+                        </small>
+                    </div>
+
+                    <div class="form-group mt-4">
+                        <label for="job_description"><strong><i class="fas fa-briefcase"></i> Job
+                                Description</strong></label>
+                        <textarea class="form-control" id="job_description" name="job_description" rows="10" required
+                            placeholder="Paste the complete job description here...
+
+Example:
+Job Title: Senior Software Engineer
+Requirements:
+- 5+ years of Python experience
+- Experience with React and Node.js
+- Strong problem-solving skills..."></textarea>
+                        <small class="text-muted">
+                            Paste the entire job posting including requirements, qualifications, and responsibilities.
+                        </small>
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-lg btn-primary">
+                            <i class="fas fa-rocket"></i> Analyze & Enhance Resume
+                        </button>
+                    </div>
+                </form>
+
+                <hr class="my-5">
+
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <div class="p-3">
+                            <i class="fas fa-robot fa-3x text-primary mb-3"></i>
+                            <h5>AI-Powered</h5>
+                            <p class="text-muted">Uses Ollama LLM for intelligent text generation</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3">
+                            <i class="fas fa-chart-line fa-3x text-success mb-3"></i>
+                            <h5>ATS Optimized</h5>
+                            <p class="text-muted">Improves your ATS compatibility score</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3">
+                            <i class="fas fa-shield-alt fa-3x text-info mb-3"></i>
+                            <h5>Layout Preserved</h5>
+                            <p class="text-muted">Keeps your resume formatting intact</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

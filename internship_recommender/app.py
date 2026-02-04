@@ -1,5 +1,6 @@
 import os
-from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, session
+from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, session, send_from_directory
+from datetime import datetime
 from utils.resume_parser import extract_text_from_file
 from utils.ner_extractor import extract_skills_and_summary
 from utils.ollama_summarizer import summarizer
@@ -15,6 +16,10 @@ from utils.candidate_matcher import (
     match_candidates_to_job, search_and_match_candidates, get_candidate_insights
 )
 from utils.hr_chatbot import hr_chatbot
+from utils.explainable_ats_engine import ats_engine, ExplainableATSEngine
+from utils.rag_ats_educator import rag_educator
+from utils.resume_editor import resume_editor
+import json
 
 def format_salary_lpa(rupees):
     """Convert rupees to LPA (Lakhs Per Annum) format with 1 decimal place."""
@@ -36,6 +41,29 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 def lpa_filter(rupees):
     """Jinja2 filter to format salary in LPA."""
     return format_salary_lpa(rupees)
+
+@app.template_filter('basename')
+def basename_filter(path):
+    """Jinja2 filter to get filename from path."""
+    return os.path.basename(path) if path else ""
+
+@app.template_filter('format_date')
+def format_date_filter(value, format='%Y-%m-%d'):
+    """Format a date string or datetime object."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        try:
+            # Try parsing typical SQL timestamp formats
+            if "T" in value:
+                dt = datetime.fromisoformat(value)
+            else:
+                dt = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+            return dt.strftime(format)
+        except (ValueError, TypeError):
+            # If parsing fails, return original string or a fallback substring
+            return value.split(' ')[0] if ' ' in value else value
+    return value.strftime(format)
 
 # Ensure salary model exists / train lightweight sample
 ensure_trained_model()
@@ -185,8 +213,9 @@ def dashboard():
     
     profile = db.get_user_profile(user['id'])
     history = db.get_recommendation_history(user['id'], limit=5)
+    enhancement_history = db.get_modification_history(user['id'], limit=5)
     
-    return render_template("dashboard.html", user=user, profile=profile, history=history)
+    return render_template("dashboard.html", user=user, profile=profile, history=history, enhancement_history=enhancement_history)
 
 @app.route("/apply", methods=["GET", "POST"])
 @login_required
@@ -402,6 +431,85 @@ def upload():
         skill_gap_explanation=skill_gap_explanation,
     )
 
+@app.route("/recommendations")
+@login_required
+def recommendations():
+    user = get_current_user()
+    
+    # 1. Try to get latest recommendation context (Role, Location, Skills)
+    # Priority: Recommendation History > Profile
+    rec_history = db.get_recommendation_history(user['id'], limit=1)
+    profile = db.get_user_profile(user['id'])
+    
+    role = None
+    location = None
+    skills = []
+    
+    if rec_history:
+        last_rec = rec_history[0]
+        role = last_rec.get('role')
+        location = last_rec.get('location')
+        # DB stores skills as "skill1,skill2" string or similar in 'skills_used' ??
+        # Let's check db schema in database.py: 'skills_used TEXT'
+        # In apply route: db.save_recommendation_history(..., skills, ...)
+        # In save_recommendation_history: ','.join(skills_used)
+        if last_rec.get('skills_used'):
+            skills = last_rec.get('skills_used').split(',')
+    
+    if not role and profile:
+        # Fallback to Profile if history is empty
+        # Profile has degree, sector, stream, skills (string)
+        # But NOT explicit "Target Role". 
+        # We might have to guess or ask user.
+        # For now, let's try to infer or just redirect if missing.
+        role = profile.get('stream') # Weak fallback
+        if profile.get('skills'):
+            skills = profile.get('skills').split(',')
+    
+    if not role:
+        flash("We need to know your Target Role to provide recommendations. Please upload a resume or fill the form.")
+        return redirect(url_for('upload'))
+    
+    # Clean up data
+    role = role.strip()
+    location = location.strip() if location else ""
+    skills = [s.strip() for s in skills if s.strip()]
+    
+    # 2. Run Live Analysis (Getting fresh jobs is better than stale history)
+    have, missing, ranked_missing = analyze_skill_gap(skills, role)
+    learning_path = create_learning_path(ranked_missing, have)
+    
+    # Search jobs (fresh)
+    internships = ddg_search_internships(role, location, top_k=5)
+    if not internships:
+        internships = recommend_internships_from_profile(skills, role, location, top_k=5)
+        
+    for job in internships:
+        if not job.get("location"):
+            job["location"] = location
+            
+        # Add salary estimate to job
+        job_role = find_best_role(job.get("title", "")) or role
+        jlow, jhigh = predict_salary(skills, job_role, experience_years=0)
+        job["salary_low"] = jlow
+        job["salary_high"] = jhigh
+
+    # Overall salary
+    sal_low, sal_high = predict_salary(skills, role, experience_years=0)
+    
+    return render_template(
+        "recommendations.html",
+        user=user,
+        role=role,
+        internships=internships,
+        salary_range=(sal_low, sal_high),
+        have=have,
+        missing=missing,
+        ranked_missing=ranked_missing,
+        learning_path=learning_path
+    )
+
+
 @app.route("/api/predict_salary", methods=["POST"])
 def api_predict_salary():
     data = request.get_json(force=True) or {}
@@ -428,6 +536,35 @@ def api_predict_salary():
         except Exception as e:
             print(f"Error generating explanation: {e}")
             response["explanation"] = None
+    
+    return jsonify(response)
+
+@app.route("/api/ats-educator/chat", methods=["POST"])
+def api_ats_educator_chat():
+    """API endpoint for RAG ATS Educator"""
+    data = request.get_json(force=True) or {}
+    question = data.get("question", "").strip()
+    
+    if not question:
+        return jsonify({"error": "Question is required"}), 400
+    
+    user = get_current_user()
+    context = {}
+    
+    # Enrich context with user data if available
+    if user:
+        try:
+            # Get latest enhancement history to provide context
+            enhancement_history = db.get_modification_history(user['id'], limit=1)
+            if enhancement_history:
+                latest = enhancement_history[0]
+                context['ats_score'] = latest.get('ats_score_before')
+                # Add more context as needed
+        except Exception as e:
+            print(f"Error getting user context: {e}")
+            
+    # Generate response
+    response = rag_educator.generate_explanation(question, context=context)
     
     return jsonify(response)
 
@@ -796,6 +933,268 @@ def api_hr_chatbot_debug():
         "system_prompt_preview": system_prompt[:500] if system_prompt else "No prompt"
     })
 
+# ==================== RESUME ENHANCEMENT ROUTES ====================
+
+@app.route("/enhance-resume", methods=["GET", "POST"])
+@login_required
+def enhance_resume():
+    """AI-powered resume enhancement based on job description"""
+    user = get_current_user()
+    
+    if request.method == "GET":
+        return render_template("enhance_resume.html", user=user)
+    
+    # POST: Process resume enhancement
+    if "resume" not in request.files:
+        flash("Please upload a resume file")
+        return redirect(url_for("enhance_resume"))
+    
+    file = request.files["resume"]
+    job_description = request.form.get("job_description", "").strip()
+    
+    if not job_description:
+        flash("Please provide a job description")
+        return redirect(url_for("enhance_resume"))
+    
+    if file.filename == "":
+        flash("No file selected")
+        return redirect(url_for("enhance_resume"))
+    
+    # Check file type
+    if not file.filename.lower().endswith(('.docx',)):
+        flash("Currently only DOCX files are supported for enhancement")
+        return redirect(url_for("enhance_resume"))
+    
+    # Initialize resume modifications table
+    db.create_resume_modifications_table()
+    
+    # Save original file
+    filename = f"{user['id']}_{file.filename}"
+    original_path = os.path.join(app.config["UPLOAD_FOLDER"], f"original_{filename}")
+    file.save(original_path)
+    print(f"[DEBUG] File saved to: {original_path}")
+    
+    try:
+        # 1. Extract text from resume
+        print("[DEBUG] Step 1: Extracting text from resume...")
+        text = extract_text_from_file(original_path)
+        print(f"[DEBUG] Extracted {len(text)} characters from resume")
+        
+        print("[DEBUG] Step 2: Extracting skills from resume...")
+        skills, summary = extract_skills_and_summary(text)
+        print(f"[DEBUG] Found {len(skills)} skills in resume")
+        
+        # 2. Extract skills from JD
+        print("[DEBUG] Step 3: Extracting skills from JD...")
+        jd_skills, _ = extract_skills_and_summary(job_description)
+        print(f"[DEBUG] Found {len(jd_skills)} skills in JD")
+        
+        # 3. Run ATS analysis (before modification)
+        print("[DEBUG] Step 4: Running ATS analysis...")
+        ats_result = ats_engine.analyze_resume_vs_jd(
+            resume_skills=skills,
+            job_required_skills=jd_skills,
+            job_preferred_skills=[],
+            resume_text=text,
+            job_description=job_description
+        )
+        
+        ats_score_before = ats_result.overall_score
+        print(f"[DEBUG] ATS Score: {ats_score_before}%")
+        print(f"[DEBUG] Missing skills: {[m.skill for m in ats_result.missing_skills][:5]}")
+        print(f"[DEBUG] Weak skills: {[w.skill for w in ats_result.weak_skills][:5]}")
+        
+        # 4. Generate modification suggestions
+        print("[DEBUG] Step 5: Generating AI suggestions with Ollama...")
+        print(f"[DEBUG] Ollama available: {resume_editor.ollama_available}")
+        
+        suggestions = resume_editor.suggest_resume_modifications(
+            resume_text=text,
+            jd_text=job_description,
+            missing_skills=[m.skill for m in ats_result.missing_skills],
+            weak_skills=[w.skill for w in ats_result.weak_skills],
+            ats_score=ats_score_before
+        )
+        
+        print(f"[DEBUG] Generated {len(suggestions)} suggestions")
+        
+        # Store suggestions in session (even if empty, so user can edit)
+        print("[DEBUG] Step 6: Storing suggestions in session...")
+        
+        # If no suggestions, create a dummy one or just pass empty list
+        if not suggestions:
+            print("[DEBUG] No suggestions generated - creating placeholder")
+            pass # suggestions is []
+
+        session['enhancement_data'] = {
+            'original_path': original_path,
+            'filename': filename,
+            'suggestions': [
+                {
+                    'section': s.section,
+                    'original': s.original_text,
+                    'suggested': s.suggested_text,
+                    'reason': s.reason,
+                    'impact': s.impact_score
+                }
+                for s in suggestions
+            ],
+            'ats_score_before': ats_score_before,
+            'job_description': job_description[:1000]
+        }
+        
+        print("[DEBUG] Step 7: Rendering review template...")
+        return render_template(
+            "review_enhancements.html",
+            user=user,
+            suggestions=suggestions,
+            ats_score_before=ats_score_before,
+            job_description=job_description
+        )
+    
+    except Exception as e:
+        import traceback
+        print(f"\n[ERROR] ========== ERROR IN RESUME ENHANCEMENT ==========")
+        print(f"[ERROR] Error type: {type(e).__name__}")
+        print(f"[ERROR] Error message: {e}")
+        print(f"[ERROR] Full traceback:")
+        print(traceback.format_exc())
+        print(f"[ERROR] ================================================\n")
+        flash(f"Error processing resume: {str(e)}")
+        return redirect(url_for("enhance_resume"))
+
+
+@app.route("/apply-enhancements", methods=["POST"])
+@login_required
+def apply_enhancements():
+    """Apply approved resume enhancements"""
+    user = get_current_user()
+    
+    enhancement_data = session.get('enhancement_data')
+    if not enhancement_data:
+        flash("No enhancement data found. Please start again.")
+        return redirect(url_for("enhance_resume"))
+    
+    # Get all indices and approved ones
+    all_indices = request.form.getlist('suggestion_indices')
+    approved_indices = request.form.getlist('approved_indices')
+    download_format = request.form.get('download_format', 'docx')
+    
+    try:
+        # Reconstruct suggestions from session/file
+        text = extract_text_from_file(enhancement_data['original_path'])
+        jd_text = enhancement_data['job_description']
+        
+        # We need to rebuild the full suggestion objects as they were in the session
+        # But we also need to update them with any USER EDITS from the form
+        
+        # Load original suggestions (lightweight version from session)
+        session_suggestions = enhancement_data['suggestions']
+        
+        # Re-run generation or just use session data?
+        # Ideally we trust the session data for the structure, but we need the full objects for the editor
+        # For simplicity, we'll recreate modification objects from the session and form data
+        
+        from utils.resume_editor import ModificationSuggestion
+        
+        final_suggestions_to_apply = []
+        
+        for idx in all_indices:
+            if idx in approved_indices:
+                # This suggestion is approved
+                i = int(idx)
+                if i < len(session_suggestions):
+                    s_data = session_suggestions[i]
+                    
+                    # Get user-edited text
+                    user_edited_text = request.form.get(f"suggestion_text_{idx}", "").strip()
+                    
+                    # Create object
+                    suggestion = ModificationSuggestion(
+                        section=s_data['section'],
+                        original_text=s_data['original'], # Note: this might be truncated in session, potentially risky if we need full match
+                        # But resume_editor uses fuzzy finding or naive replacement. 
+                        # Let's hope the replace logic finds the section header and replaces content
+                        suggested_text=user_edited_text if user_edited_text else s_data['suggested'],
+                        reason=s_data['reason'],
+                        impact_score=s_data['impact']
+                    )
+                    final_suggestions_to_apply.append(suggestion)
+        
+        # Apply modifications
+        modified_filename = f"enhanced_{enhancement_data['filename']}"
+        modified_path = os.path.join(app.config["UPLOAD_FOLDER"], modified_filename)
+        
+        # Note: apply_modifications_to_docx needs to work well. 
+        # The session stored 'original_path' is still valid.
+        success = resume_editor.apply_modifications_to_docx(
+            enhancement_data['original_path'],
+            final_suggestions_to_apply,
+            modified_path
+        )
+        
+        if not success:
+            flash("Error applying modifications. Make sure python-docx is installed.")
+            return redirect(url_for("enhance_resume"))
+        
+        # DB Save
+        db.save_resume_modification(
+            user_id=user['id'],
+            original_path=enhancement_data['original_path'],
+            modified_path=modified_path,
+            modifications=[
+                {'section': s.section, 'reason': s.reason, 'impact': s.impact_score}
+                for s in final_suggestions_to_apply
+            ],
+            score_before=enhancement_data['ats_score_before'],
+            score_after=None, 
+            job_desc=jd_text
+        )
+        
+        # Handle PDF Conversion
+        final_file_path = modified_path
+        final_filename = modified_filename
+        mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        
+        if download_format == 'pdf':
+            try:
+                # Try converting to PDF
+                pdf_filename = modified_filename.replace('.docx', '.pdf')
+                pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_filename)
+                
+                # Check for docx2pdf
+                from docx2pdf import convert
+                convert(modified_path, pdf_path)
+                
+                final_file_path = pdf_path
+                final_filename = pdf_filename
+                mimetype = "application/pdf"
+            except ImportError:
+                flash("PDF conversion requires 'docx2pdf' library. Downloading as DOCX instead.")
+            except Exception as e:
+                print(f"PDF Conversion failed: {e}")
+                flash("PDF conversion failed (requires Microsoft Word installed). Downloading as DOCX instead.")
+        
+        # Clear session
+        session.pop('enhancement_data', None)
+        
+        flash("✅ Resume enhanced successfully!")
+        return send_from_directory(
+            app.config["UPLOAD_FOLDER"],
+            final_filename,
+            as_attachment=True,
+            download_name=f"enhanced_{user['username']}_resume.{'pdf' if final_filename.endswith('.pdf') else 'docx'}",
+            mimetype=mimetype
+        )
+    
+    except Exception as e:
+        import traceback
+        print(f"Error applying enhancements: {e}")
+        print(traceback.format_exc())
+        flash(f"Error applying enhancements: {str(e)}")
+        return redirect(url_for("enhance_resume"))
+
+
 @app.route("/promote-to-hr", methods=["GET", "POST"])
 def promote_to_hr():
     """Simple route to promote a user to HR role (for testing/setup)"""
@@ -879,6 +1278,20 @@ def serve_resume(filename):
         abort(404)
     
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+
+@app.route("/api/rewrite-text", methods=["POST"])
+@login_required
+def rewrite_text_api():
+    """API endpoint to rewrite resume text"""
+    data = request.json
+    text = data.get('text')
+    style = data.get('style', 'professional')
+    
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+        
+    variations = resume_editor.rewrite_text_segment(text, style)
+    return jsonify({"variations": variations})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

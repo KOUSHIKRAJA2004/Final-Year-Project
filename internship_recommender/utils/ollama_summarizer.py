@@ -3,7 +3,7 @@ import json
 import time
 
 class OllamaSummarizer:
-    def __init__(self, model="llama3.2", base_url="http://localhost:11434"):
+    def __init__(self, model="tinyllama", base_url="http://localhost:11434"):
         self.model = model
         self.base_url = base_url
         self.api_url = f"{base_url}/api/generate"
@@ -26,6 +26,7 @@ class OllamaSummarizer:
                     "here's a concise professional summary:", "here's a professional summary:",
                     "here is a professional summary for the given resume:",
                     "here is a professional summary:". Keep it concise, under {max_length} characters. Focus on key skills, experience, and goals.give only 3 to 4 sentences.
+                    CRITICAL: Write ONLY in ENGLISH. Even if the resume is in another language, the summary MUST be in English.
 
 Resume content:
 {resume_text[:1500]}

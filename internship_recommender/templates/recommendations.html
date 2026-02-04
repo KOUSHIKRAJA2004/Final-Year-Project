@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}My Recommendations - TalentMatch{% endblock %}
+
+{% block content %}
+<div class="with-sidebar">
+    <div class="sidebar">
+        <h2>Menu</h2>
+        <nav>
+            <ul>
+                <li><a href="/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                <li><a href="/profile"><i class="fas fa-user"></i> Profile</a></li>
+                <li><a href="/upload"><i class="fas fa-upload"></i> Upload Resume</a></li>
+                <li><a href="/enhance-resume"><i class="fas fa-magic"></i> AI Resume Enhancer</a></li>
+                <li><a href="/apply"><i class="fas fa-file-alt"></i> Application Form</a></li>
+                <li><a href="/recommendations" class="active"><i class="fas fa-briefcase"></i> Job Recommendations</a>
+                </li>
+                <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="top-nav">
+            <h1>TalentMatch</h1>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div class="user-avatar">
+                    {{ (user.full_name or user.username)[0]|upper if user else 'U' }}
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <h1><i class="fas fa-briefcase"></i> Your Personalized Recommendations</h1>
+            <p class="text-gray-600">Based on your target role: <strong>{{ role }}</strong></p>
+
+            {% if not internships %}
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-circle"></i> &nbsp; No recommendations found yet. Try updating your profile
+                or uploading a resume.
+            </div>
+            {% endif %}
+
+            <div class="grid">
+                <!-- Job Opportunities -->
+                <div class="card" style="grid-column: span 2;">
+                    <h3><i class="fas fa-search"></i> Top Job Opportunities</h3>
+
+                    {% if internships %}
+                    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                        {% for job in internships %}
+                        <div
+                            style="border: 1px solid #ddd; padding: 1rem; border-radius: 12px; background: #fafafa; transition: transform 0.2s;">
+                            <h4 style="color: var(--primary); margin-top: 0;">{{ job.title }}</h4>
+                            <p><strong><i class="fas fa-map-marker-alt"></i> Location:</strong> {{ job.location }}</p>
+                            {% if job.salary_low and job.salary_high %}
+                            <p><strong><i class="fas fa-money-bill-wave"></i> Salary:</strong> ₹{{ job.salary_low|lpa }}
+                                - {{ job.salary_high|lpa }} LPA</p>
+                            {% endif %}
+                            <p><small>{{ job.snippet }}</small></p>
+                            <a href="{{ job.link }}" target="_blank" class="btn btn-sm"><i
+                                    class="fas fa-external-link-alt"></i> Apply / View</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p>No job opportunities found matching your profile currently.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Skill Gap & Salary -->
+                <div class="card">
+                    <h3><i class="fas fa-chart-pie"></i> Skill Gap</h3>
+                    <div style="text-align: center;">
+                        <canvas id="skillGapChart" style="max-width: 180px; margin: 0 auto;"></canvas>
+                        <div style="margin-top: 1rem; text-align: left;">
+                            <p style="font-size: 0.9rem;"><strong>Start Learning:</strong></p>
+                            {% if ranked_missing %}
+                            {% for item in ranked_missing[:3] %}
+                            <span class="badge"
+                                style="background: #ffebee; color: #c62828; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin: 2px;">{{
+                                item.skill }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <p class="text-success">No critical gaps!</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3><i class="fas fa-chart-line"></i> Salary Potential</h3>
+                    <p
+                        style="font-size: 1.5rem; font-weight: bold; color: var(--primary); text-align: center; margin: 1rem 0;">
+                        ₹{{ salary_range[0]|lpa }} - {{ salary_range[1]|lpa }} LPA
+                    </p>
+                    <p><small>Estimated based on your skill set for {{ role }} (0 years exp).</small></p>
+                </div>
+            </div>
+
+            <!-- Learning Path -->
+            <div class="card" style="margin-top: 1.5rem;">
+                <h3><i class="fas fa-route"></i> Recommended Learning Path</h3>
+                {% if learning_path %}
+                <div style="display: flex; overflow-x: auto; gap: 1rem; padding-bottom: 1rem;">
+                    {% for item in learning_path %}
+                    <div
+                        style="min-width: 250px; padding: 1rem; border: 1px solid #eee; border-radius: 12px; background: #f9f9f9;">
+                        <h4 style="color: var(--primary); margin: 0 0 0.5rem 0;">{{ item.skill }}</h4>
+                        {% if item.courses.free %}
+                        <div>
+                            <span style="font-size: 0.8rem; font-weight: bold; color: #27ae60;">Free Course:</span>
+                            <a href="{{ item.courses.free[0].url }}" target="_blank"
+                                style="display: block; font-size: 0.9rem; text-decoration: underline;">{{
+                                item.courses.free[0].title }}</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p>No learning recommendations required.</p>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const haveSkills = {{ have| tojson }};
+    const missingSkills = {{ missing| tojson }};
+
+    const ctx = document.getElementById('skillGapChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Have', 'Missing'],
+            datasets: [{
+                data: [haveSkills.length, missingSkills.length],
+                backgroundColor: ['#4CAF50', '#F44336'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            cutout: '70%',
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 10 } }
+            }
+        }
+    });
+</script>
+{% endblock %}
