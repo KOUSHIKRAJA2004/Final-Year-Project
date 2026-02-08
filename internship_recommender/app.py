@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-load_dotenv()  # Load environment variables from .env file
+load_dotenv(override=True)  # Load environment variables from .env file, overriding system defaults if conflict
 
 import os
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, session, send_from_directory, send_file
@@ -379,23 +379,59 @@ def upload():
 
     if gemini_result and not gemini_result.get("error"):
         # Extract data from Gemini result
-        personal = gemini_result.get("personal_info", {})
-        edu = gemini_result.get("education", {})
-        prof = gemini_result.get("professional_info", {})
+        personal = gemini_result.get("personal_info", {}) or {}
+        edu = gemini_result.get("education", []) or []
+        prof = gemini_result.get("professional_info", {}) or {}
+        skills_raw = gemini_result.get("skills", {}) or []
         
-        skills = prof.get("skills", [])
-        if isinstance(skills, str):
-             skills = [s.strip() for s in skills.split(',')]
+        # Safely handle education (can be list or dict)
+        if isinstance(edu, list) and len(edu) > 0:
+            edu_obj = edu[0]
+        elif isinstance(edu, dict):
+            edu_obj = edu
+        else:
+            edu_obj = {}
+
+        # Safely handle skills extraction (can be dict of lists, list, or string)
+        skills = []
+        if isinstance(skills_raw, dict):
+            for cat, items in skills_raw.items():
+                if isinstance(items, list):
+                    skills.extend([str(i) for i in items])
+                elif isinstance(items, str):
+                    skills.append(items)
+        elif isinstance(skills_raw, list):
+             skills = [str(s) for s in skills_raw]
+        elif isinstance(skills_raw, str):
+             skills = [s.strip() for s in skills_raw.split(',')]
+             
+        # Deduplicate and clean skills
+        skills = sorted(list(set(s.strip() for s in skills if s and str(s).strip())))
+
+        summary_parts = [personal.get('name', 'Candidate')]
         
-        summary = f"{personal.get('name')} | {edu.get('degree')} - {edu.get('stream')} | {prof.get('sector')}"
+        deg = edu_obj.get('degree')
+        stream = edu_obj.get('stream')
+        if deg:
+            if stream:
+                summary_parts.append(f"{deg} - {stream}")
+            else:
+                summary_parts.append(deg)
+        elif stream:
+             summary_parts.append(stream)
+             
+        if prof.get('sector'):
+            summary_parts.append(prof.get('sector'))
+            
+        summary = " | ".join([str(p).strip() for p in summary_parts if p])
         
         # Update profile with Gemini data
         profile_data = {
             'resume_path': filename,
-            'degree': edu.get('degree'),
-            'study_year': edu.get('study_year'),
+            'degree': deg,
+            'study_year': edu_obj.get('year') or edu_obj.get('study_year'), 
             'sector': prof.get('sector'),
-            'stream': edu.get('stream'),
+            'stream': stream if stream else 'General',
             'skills': ','.join(skills) if skills else None
         }
         db.update_user_profile(user['id'], profile_data)
