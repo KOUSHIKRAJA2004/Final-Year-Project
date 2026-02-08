@@ -119,6 +119,50 @@ class GeminiService:
             # Fallback
             return {"min_salary": 300000, "max_salary": 800000, "explanation": "Could not generate precise estimate."}
 
+    def generate_combined_insights(self, xai_data: Dict[str, Any], profile_summary: str, role: str) -> str:
+        """
+        Generates a personalized insight text combining rigid XAI numbers with Gemini's qualitative analysis.
+        
+        Args:
+            xai_data: Dictionary containing XAI factors (feature contributions, salary range).
+            profile_summary: User's profile summary or skills string.
+            role: Target role.
+            
+        Returns:
+            A string containing the personalized insight.
+        """
+        # Extract key positive/negative factors from XAI
+        stats_summary = ""
+        contributors = xai_data.get('feature_contributions', {})
+        if contributors:
+            sorted_factors = sorted(contributors.items(), key=lambda x: x[1].get('contribution_pct', 0), reverse=True)
+            top_factors = [f"{k} (+{v.get('contribution_pct'):.1f}%)" for k, v in sorted_factors[:2] if v.get('contribution_pct', 0) > 0]
+            weak_factors = [f"{k} ({v.get('contribution_pct'):.1f}%)" for k, v in sorted_factors[-2:] if v.get('contribution_pct', 0) < 0]
+            
+            stats_summary = f"Top Strengths: {', '.join(top_factors)}. Areas to Improve: {', '.join(weak_factors)}."
+            
+        prompt = f"""
+        Act as a Career Mentor. I have a candidate's data from our AI model (XAI) and their profile.
+        
+        Candidate Role: {role}
+        Profile Summary: {profile_summary}
+        
+        Quantitative Analysis (XAI stats):
+        {stats_summary}
+        Predicted Salary Range: ₹{xai_data.get('predicted_salary', 0):,.0f}
+        
+        Task: 
+        Write a short, personalized, and encouraging insight paragraph (2-3 sentences) for this candidate.
+        1. Acknowledge their specific strengths mentioned in the profile/XAI.
+        2. Explain uniquely why their salary prediction is what it is (connecting their specific skills to the matching).
+        3. Suggest ONE high-impact move to reach the next level.
+        
+        Keep it warm, professional, and DIRECTLY addressed to them ("You...").
+        Do NOT mention "XAI" or "AI model" explicitly; treat the stats as your expert observation.
+        """
+        
+        return self.generate_content(prompt)
+
     def parse_resume(self, file_path: str) -> Dict[str, Any]:
         """
         Parses a resume file using Gemini to extract structured data and generate suggestions.
