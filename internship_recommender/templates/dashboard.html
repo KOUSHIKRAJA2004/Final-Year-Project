@@ -72,6 +72,77 @@
           </div>
         </div>
 
+        <!-- AI Salary Prediction & XAI Explanation (NEW) -->
+        <div class="card" style="grid-column: 1 / -1;">
+          <h3><i class="fas fa-chart-line"></i> AI Salary Insights & Explanation</h3>
+
+          {% if salary_data %}
+          <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+            <!-- Left: Prediction & Main Summary -->
+            <div style="flex: 1; min-width: 300px;">
+              <div style="background: #f8fafc; padding: 1.5rem; border-radius: 12px; border-left: 5px solid #667eea;">
+                <h4 style="margin-top: 0; color: #4a5568;">Predicted Salary Range</h4>
+                <div style="font-size: 2rem; font-weight: 800; color: #667eea;">
+                  ₹{{ salary_data.low | lpa }} - {{ salary_data.high | lpa }} LPA
+                </div>
+                <p style="color: #718096; margin-bottom: 0;">
+                  Based on your skills and profile (0 years experience)
+                </p>
+              </div>
+
+              <div style="margin-top: 1.5rem;">
+                <h4><i class="fas fa-lightbulb" style="color: #ecc94b;"></i> Personalized Career Insight</h4>
+                <p style="white-space: pre-line; line-height: 1.6; color: #4a5568;">
+                  {{ salary_data.explanation.explanation }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Right: SHAP / Feature Contributions -->
+            <div style="flex: 1; min-width: 300px;">
+              <h4 style="margin-top: 0;">Key Factors (XAI Analysis)</h4>
+              <p style="font-size: 0.9rem; color: #718096; margin-bottom: 1rem;">
+                How much each factor contributes to your salary potential:
+              </p>
+
+              {% for key, data in salary_data.explanation.feature_contributions.items() %}
+              {% if data.contribution_pct > 1 or data.contribution_pct < -1 %} <div style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                  <span style="font-weight: 600; font-size: 0.9rem;">
+                    {% if key == 'skills_count' %}Skill Count
+                    {% elif key == 'experience_years' %}Experience
+                    {% elif key == 'role_encoded' %}Role Demand
+                    {% elif key == 'skills_experience_interaction' %}Skill x Exp Synergy
+                    {% else %}{{ key.replace('_', ' ').title() }}{% endif %}
+                  </span>
+                  <span style="font-size: 0.85rem; color: #718096;">
+                    {{ "%.1f"|format(data.contribution_pct) }}%
+                  </span>
+                </div>
+                <div style="background: #edf2f7; height: 8px; border-radius: 4px; overflow: hidden;">
+                  <div
+                    style="background: {% if data.contribution_pct > 0 %}#48bb78{% else %}#f56565{% endif %}; width: {{ data.contribution_pct|abs|round }}%; height: 100%; border-radius: 4px;">
+                  </div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+
+            <div style="margin-top: 1rem; padding: 1rem; background: #ebf8ff; border-radius: 8px; font-size: 0.9rem;">
+              <strong><i class="fas fa-info-circle"></i> Insight:</strong>
+              Your skill set is currently the biggest driver. Adding 2-3 advanced projects could increase your range by
+              ~15%.
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: #718096;">
+          <i class="fas fa-file-alt" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
+          <p>Complete your profile with skills to see salary insights!</p>
+          <a href="/profile" class="btn btn-secondary">Update Profile</a>
+        </div>
+        {% endif %}
+
         <!-- AI Resume Enhancement card (NEW) -->
         <div class="card"
           style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">

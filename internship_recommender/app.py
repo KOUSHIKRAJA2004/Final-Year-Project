@@ -221,7 +221,42 @@ def dashboard():
     history = db.get_recommendation_history(user['id'], limit=5)
     enhancement_history = db.get_modification_history(user['id'], limit=5)
     
-    return render_template("dashboard.html", user=user, profile=profile, history=history, enhancement_history=enhancement_history)
+    # ✅ Calculate Salary Prediction & XAI Explanation for Dashboard
+    salary_data = None
+    try:
+        if profile and profile.get('skills'):
+            skills = [s.strip() for s in profile.get('skills', '').split(',') if s.strip()]
+            val_role = profile.get('stream') or "Software Engineer" # Fallback role
+            val_exp = 0 # Default to 0 if not tracked
+            
+            # Predict
+            low, high = predict_salary(skills, val_role, experience_years=val_exp)
+            
+            # Explain (Quantitative XAI)
+            explainer = get_salary_explainer()
+            xai_result = explainer.explain_prediction(skills, val_role, val_exp)
+            
+            # Combine with Gemini (Qualitative Insight)
+            # Create a short profile summary for context
+            prof_summary = f"Skills: {', '.join(skills[:10])}. Role: {val_role}. Experience: {val_exp} years."
+            
+            # This call generates the "Career Mentor" style paragraph
+            personalized_insight = gemini_service.generate_combined_insights(xai_result, prof_summary, val_role)
+            
+            # Update the explanation text in xai_result to be the personalized valid one,
+            # but keep the rigorous feature contributions for the charts.
+            xai_result['explanation'] = personalized_insight
+
+            salary_data = {
+                'low': low,
+                'high': high,
+                'explanation': xai_result
+            }
+    except Exception as e:
+        print(f"Error calculating dashboard salary: {e}")
+
+    return render_template("dashboard.html", user=user, profile=profile, history=history, 
+                         enhancement_history=enhancement_history, salary_data=salary_data)
 
 @app.route("/apply", methods=["GET", "POST"])
 @login_required
